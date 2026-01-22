@@ -1,76 +1,56 @@
 """
-TRS Pricer Module
-Main orchestrator for TRS pricing simulation
+TRS Pricer Module (Class-based)
+Main orchestrator for TRS pricing simulation.
 """
 
+from typing import Dict, Tuple, List, Any, Optional
+
 import numpy as np
-import pandas as pd
-from typing import Dict, Tuple, List
 import matplotlib.pyplot as plt
 
-from market_data import (
-    fetch_current_price,
-    fetch_dividend_yield,
-    fetch_historical_volatility,
-    estimate_funding_spread,
+from config import (
+    DEFAULT_BENCHMARK_RATE,
+    DEFAULT_LOOKBACK_DAYS,
 )
-from simulation import simulate_price_paths
-from cash_flows import calculate_cash_flows
-from valuation import calculate_npv, calculate_exposure_metrics, aggregate_results
-from visualization import (
-    plot_simulated_price_paths,
-    plot_npv_distribution,
-    plot_epe_profile
-)
+from market_data import MarketDataFetcher
+from simulation import SimulationEngine
+from cash_flows import CashFlowEngine
+from valuation import ValuationEngine
+from visualization import TRSVisualizer
 
 
-def get_user_inputs(params: Dict) -> Dict:
-    """
-    Process user inputs and auto-populate market data where needed
-    
-    Args:
-        params: Dictionary of user-provided parameters with optional overrides:
-            - ticker: Stock ticker (required)
-            - notional: Principal amount (required)
-            - initial_price: Optional override
-            - dividend_yield: Optional override
-            - benchmark_rate: Optional override
-            - funding_spread: Optional override
-            - effective_funding_rate: Optional override (or calculated)
-            - volatility: Optional override
-            - tenor: Swap duration in years (required)
-            - payment_frequency: Number of periods per year (required)
-            - num_simulations: Number of simulations (required)
-            
-    Returns:
-        Complete parameter dictionary with all values populated
-    """
-    pass
+class TRSPricer:
+    """Orchestrates market data, simulation, cash flows, valuation, and visualization."""
 
+    def __init__(
+        self,
+        market_data_fetcher: Optional[MarketDataFetcher] = None,
+        simulation_engine: Optional[SimulationEngine] = None,
+        cash_flow_engine: Optional[CashFlowEngine] = None,
+        valuation_engine: Optional[ValuationEngine] = None,
+        visualizer: Optional[TRSVisualizer] = None,
+    ):
+        self._market = market_data_fetcher or MarketDataFetcher(enable_cache=True)
+        self._sim = simulation_engine or SimulationEngine()
+        self._cf = cash_flow_engine or CashFlowEngine()
+        self._val = valuation_engine or ValuationEngine()
+        self._viz = visualizer or TRSVisualizer()
 
-def run_simulation(params: Dict) -> Tuple[Dict, List[plt.Figure]]:
-    """
-    Main simulation orchestrator
-    
-    Args:
-        params: Dictionary of input parameters (see get_user_inputs)
-        
-    Returns:
-        Tuple of (summary_results, figures):
-            - summary_results: Dictionary containing all results and metrics
-            - figures: List of matplotlib Figure objects for visualization
-    """
-    pass
+    def get_user_inputs(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Process user inputs and auto-populate market data where needed.
+        Uses MarketDataFetcher for price, dividend yield, volatility, funding spread.
+        Benchmark rate: user override or config default.
+        """
+        raise NotImplementedError
 
+    def run_simulation(self, params: Dict[str, Any]) -> Tuple[Dict[str, Any], List[plt.Figure]]:
+        """
+        Run full pipeline: resolve inputs → simulate paths → cash flows → NPV/EPE → plots.
+        Returns (summary_results, figures).
+        """
+        raise NotImplementedError
 
-def generate_summary_report(summary_results: Dict) -> str:
-    """
-    Generate formatted console report of simulation results
-    
-    Args:
-        summary_results: Dictionary containing all results and metrics
-        
-    Returns:
-        Formatted string report
-    """
-    pass
+    def generate_summary_report(self, summary_results: Dict[str, Any]) -> str:
+        """Format simulation results as a console report."""
+        raise NotImplementedError

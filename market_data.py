@@ -226,29 +226,3 @@ class MarketDataFetcher:
     def clear_cache(self) -> None:
         """Clear the ticker cache."""
         self._ticker_cache.clear()
-
-# Create a default instance for backward compatibility
-_default_fetcher = MarketDataFetcher(enable_cache=True)
-
-# Module-level functions for backward compatibility
-def fetch_current_price(ticker: str) -> float:
-    """Get current stock price via yfinance (module-level wrapper)."""
-    return _default_fetcher.fetch_current_price(ticker)
-
-
-def fetch_dividend_yield(ticker: str) -> float:
-    """Get dividend yield from yfinance (module-level wrapper)."""
-    return _default_fetcher.fetch_dividend_yield(ticker)
-
-
-def fetch_historical_volatility(
-    ticker: str, lookback_days: int = DEFAULT_LOOKBACK_DAYS
-) -> float:
-    """Get volatility from yfinance (module-level wrapper)."""
-    return _default_fetcher.fetch_historical_volatility(ticker, lookback_days)
-
-
-def estimate_funding_spread(ticker: str) -> float:
-    """Estimate funding spread using hybrid multi-factor model (module-level wrapper)."""
-    return _default_fetcher.estimate_funding_spread(ticker)
-

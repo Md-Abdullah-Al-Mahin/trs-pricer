@@ -1,77 +1,80 @@
 """
-Visualization Module
-Handles plotting of simulation results, NPV distributions, and EPE profiles
+Visualization Module (Class-based)
+Handles plotting of simulation results, NPV distributions, and EPE profiles.
 """
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from typing import List
+from typing import List, Optional
 
 
-def plot_simulated_price_paths(
-    price_paths: np.ndarray,
-    num_paths_to_plot: int = 20,
-    tenor: float = None,
-    payment_frequency: int = None
-) -> plt.Figure:
-    """
-    Plot a sample of the simulated future stock price paths
-    
-    Args:
-        price_paths: 2D array of simulated price paths (num_simulations, periods)
-        num_paths_to_plot: Number of paths to display (default: 20)
-        tenor: Swap duration in years (for x-axis labeling)
-        payment_frequency: Number of periods per year (for x-axis labeling)
-        
-    Returns:
-        Matplotlib Figure object
-    """
-    pass
+class TRSVisualizer:
+    """Plots simulated price paths, NPV distribution, EPE profile, and optional cash flow analysis."""
 
+    def plot_simulated_price_paths(
+        self,
+        price_paths: np.ndarray,
+        num_paths_to_plot: int = 20,
+        tenor: Optional[float] = None,
+        payment_frequency: Optional[int] = None,
+    ) -> plt.Figure:
+        """Plot a sample of simulated future stock price paths."""
+        fig, ax = plt.subplots(figsize=(10, 5))
+        n_sims, n_cols = price_paths.shape
+        n_plot = min(num_paths_to_plot, n_sims)
+        x = np.arange(n_cols)
+        if tenor is not None and payment_frequency is not None:
+            x = x / payment_frequency
+        for i in range(n_plot):
+            ax.plot(x, price_paths[i], alpha=0.6, linewidth=0.8)
+        ax.set_xlabel("Time (years)" if (tenor is not None and payment_frequency is not None) else "Period")
+        ax.set_ylabel("Stock price")
+        ax.set_title("Simulated price paths")
+        ax.grid(True, alpha=0.3)
+        fig.tight_layout()
+        return fig
 
-def plot_npv_distribution(npv_list: List[float]) -> plt.Figure:
-    """
-    Plot a histogram of the desk's NPV across all simulations
-    
-    Args:
-        npv_list: List of NPV values for each simulation
-        
-    Returns:
-        Matplotlib Figure object
-    """
-    pass
+    def plot_npv_distribution(self, npv_list: List[float]) -> plt.Figure:
+        """Plot histogram of desk NPV across all simulations."""
+        fig, ax = plt.subplots(figsize=(8, 5))
+        ax.hist(npv_list, bins=50, edgecolor="black", alpha=0.7)
+        ax.axvline(np.mean(npv_list), color="red", linestyle="--", label=f"Mean: ${np.mean(npv_list):,.0f}")
+        ax.set_xlabel("Desk NPV ($)")
+        ax.set_ylabel("Count")
+        ax.set_title("NPV distribution")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        fig.tight_layout()
+        return fig
 
+    def plot_epe_profile(self, epe_profile: np.ndarray, dates: np.ndarray) -> plt.Figure:
+        """Plot Expected Positive Exposure over time."""
+        fig, ax = plt.subplots(figsize=(8, 5))
+        ax.plot(dates, epe_profile, "b-", linewidth=2)
+        ax.fill_between(dates, 0, epe_profile, alpha=0.3)
+        ax.set_xlabel("Time (years)")
+        ax.set_ylabel("EPE ($)")
+        ax.set_title("Expected Positive Exposure")
+        ax.grid(True, alpha=0.3)
+        fig.tight_layout()
+        return fig
 
-def plot_epe_profile(
-    epe_profile: np.ndarray,
-    dates: np.ndarray
-) -> plt.Figure:
-    """
-    Plot the Expected Positive Exposure over time
-    
-    Args:
-        epe_profile: Array of EPE values for each future date
-        dates: Array of corresponding dates or period indices
-        
-    Returns:
-        Matplotlib Figure object
-    """
-    pass
-
-
-def plot_cash_flow_analysis(
-    cash_flows_series: List[pd.DataFrame],
-    num_simulations_to_plot: int = 10
-) -> plt.Figure:
-    """
-    Plot cash flow analysis for a sample of simulations
-    
-    Args:
-        cash_flows_series: List of DataFrames containing cash flows
-        num_simulations_to_plot: Number of simulations to display
-        
-    Returns:
-        Matplotlib Figure object
-    """
-    pass
+    def plot_cash_flow_analysis(
+        self,
+        cash_flows_series: List[pd.DataFrame],
+        num_simulations_to_plot: int = 10,
+    ) -> plt.Figure:
+        """Plot net cash flow over periods for a sample of simulations."""
+        fig, ax = plt.subplots(figsize=(10, 5))
+        n_plot = min(num_simulations_to_plot, len(cash_flows_series))
+        for i in range(n_plot):
+            df = cash_flows_series[i]
+            ax.plot(df["net_cash_flow"].values, alpha=0.5, linewidth=1)
+        ax.axhline(0, color="black", linestyle="-", linewidth=0.5)
+        ax.set_xlabel("Period")
+        ax.set_ylabel("Net cash flow ($)")
+        ax.set_title("Net cash flow by period (sample paths)")
+        ax.grid(True, alpha=0.3)
+        fig.tight_layout()
+        return fig

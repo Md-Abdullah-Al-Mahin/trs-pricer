@@ -1,6 +1,7 @@
 """
-Cash Flow Module
-Handles calculation of periodic cash flows for TRS
+Cash Flow Module (Class-based)
+Handles calculation of periodic cash flows for TRS.
+See README Section 2.2.B.
 """
 
 import numpy as np
@@ -8,71 +9,65 @@ import pandas as pd
 from typing import Dict, List
 
 
-def calculate_cash_flows(price_paths: np.ndarray, params: Dict) -> List[pd.DataFrame]:
-    """
-    Calculate cash flows for each simulation and time period
-    
-    Args:
-        price_paths: 2D array of simulated price paths (num_simulations, periods)
-        params: Dictionary containing all TRS parameters:
-            - notional: Principal amount
-            - dividend_yield: Annual dividend yield
-            - effective_funding_rate: Benchmark rate + funding spread
-            - payment_frequency: Number of periods per year
-            - tenor: Swap duration in years
-            
-    Returns:
-        List of DataFrames, one per simulation, containing:
-            - period_start_price
-            - period_end_price
-            - total_return_cash_flow (desk pays to client)
-            - net_funding_cash_flow (client pays to desk)
-            - net_cash_flow (net to desk)
-    """
-    pass
+class CashFlowEngine:
+    """Computes total return leg, funding leg, and net cash flows per path and period."""
 
+    @staticmethod
+    def calculate_total_return_leg(
+        period_start_price: float,
+        period_end_price: float,
+        dividend_yield: float,
+        notional: float,
+        payment_frequency: int,
+    ) -> float:
+        """Total return leg (desk pays client): appreciation + dividends."""
+        appreciation = (period_end_price - period_start_price) / period_start_price * notional
+        dividends = (dividend_yield / payment_frequency) * notional
+        return appreciation + dividends
 
-def calculate_total_return_leg(
-    period_start_price: float,
-    period_end_price: float,
-    dividend_yield: float,
-    notional: float,
-    payment_frequency: int
-) -> float:
-    """
-    Calculate Total Return Leg cash flow (Desk Pays to Client)
-    
-    Args:
-        period_start_price: Stock price at period start
-        period_end_price: Stock price at period end
-        dividend_yield: Annual dividend yield
-        notional: Principal amount
-        payment_frequency: Number of periods per year
-        
-    Returns:
-        Total return cash flow (positive = desk pays to client)
-    """
-    pass
+    @staticmethod
+    def calculate_funding_leg(
+        period_start_price: float,
+        period_end_price: float,
+        effective_funding_rate: float,
+        notional: float,
+        payment_frequency: int,
+    ) -> float:
+        """Funding leg (client pays desk): funding amount minus depreciation (netted)."""
+        funding_amount = (effective_funding_rate / payment_frequency) * notional
+        depreciation = max(0.0, period_start_price - period_end_price) / period_start_price * notional
+        return funding_amount - depreciation
 
-
-def calculate_funding_leg(
-    period_start_price: float,
-    period_end_price: float,
-    effective_funding_rate: float,
-    notional: float,
-    payment_frequency: int
-) -> float:
-    """
-    Calculate Funding Leg cash flow (Client Pays to Desk)
-    
-    Args:
-        period_start_price: Stock price at period start
-        period_end_price: Stock price at period end
-        effective_funding_rate: Benchmark rate + funding spread
-        notional: Principal amount
-        payment_frequency: Number of periods per year
-        
-    Returns:
-        Net funding cash flow (positive = client pays to desk)
-    """
-    pass
+    def calculate_cash_flows(self, price_paths: np.ndarray, params: Dict) -> List[pd.DataFrame]:
+        """
+        Cash flows for each simulation. Each DataFrame has period_start_price, period_end_price,
+        total_return_cash_flow, net_funding_cash_flow, net_cash_flow.
+        """
+        notional = params["notional"]
+        dividend_yield = params["dividend_yield"]
+        effective_funding_rate = params["effective_funding_rate"]
+        payment_frequency = params["payment_frequency"]
+        n_sims, n_cols = price_paths.shape
+        n_periods = n_cols - 1
+        out: List[pd.DataFrame] = []
+        for i in range(n_sims):
+            rows = []
+            for t in range(n_periods):
+                p_start = price_paths[i, t]
+                p_end = price_paths[i, t + 1]
+                total_return = self.calculate_total_return_leg(
+                    p_start, p_end, dividend_yield, notional, payment_frequency
+                )
+                net_funding = self.calculate_funding_leg(
+                    p_start, p_end, effective_funding_rate, notional, payment_frequency
+                )
+                net_cf = net_funding - total_return
+                rows.append({
+                    "period_start_price": p_start,
+                    "period_end_price": p_end,
+                    "total_return_cash_flow": total_return,
+                    "net_funding_cash_flow": net_funding,
+                    "net_cash_flow": net_cf,
+                })
+            out.append(pd.DataFrame(rows))
+        return out

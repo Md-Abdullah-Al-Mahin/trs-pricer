@@ -300,7 +300,6 @@ main.py ✅ (structure ready, waiting on implementation)
 **Legend:** ✅ = Completed, ❌ = Pending implementation
 
 ### **Implementation tips**
-
 1. Implement and test each class in isolation before wiring.  
 2. Use config defaults and fallbacks for all market data.  
 3. Validate inputs (e.g. positive notional, valid tenor).  

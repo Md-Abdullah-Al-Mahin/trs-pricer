@@ -216,5 +216,65 @@ class TRSPricer:
         return summary_results, figures
 
     def generate_summary_report(self, summary_results: Dict[str, Any]) -> str:
-        """Format simulation results as a console report."""
-        raise NotImplementedError
+        """
+        Format simulation results as a console report.
+        
+        Args:
+            summary_results: Dictionary with simulation results from run_simulation
+        
+        Returns:
+            Formatted string report with trade details, market data, valuation, and risk metrics
+        """
+        lines = []
+        lines.append("=== TRS Pricing Simulation Results ===")
+        lines.append(f"Reference Asset: {summary_results['ticker']}")
+        lines.append(f"Notional: ${summary_results['notional']:,.0f}")
+        lines.append(f"Tenor: {summary_results['tenor']} years")
+        lines.append("-" * 40)
+        
+        # Market Data section
+        lines.append("Market Data (Auto-Fetched):")
+        lines.append(f"  Initial Price: ${summary_results['initial_price']:.2f} (from yfinance)")
+        lines.append(f"  Dividend Yield: {summary_results['dividend_yield']*100:.2f}% (yfinance)")
+        lines.append(f"  Historical Volatility: {summary_results['volatility']*100:.1f}% (yfinance)")
+        lines.append(f"  Benchmark Rate: {summary_results['benchmark_rate']*100:.2f}% (config default)")
+        lines.append(f"  Funding Spread: {summary_results['funding_spread']*100:.2f}% (hybrid model)")
+        lines.append(f"  Effective Funding Rate: {summary_results['effective_funding_rate']*100:.2f}%")
+        lines.append("-" * 40)
+        
+        # Valuation section
+        lines.append("Valuation (Desk's Perspective):")
+        npv_mean = summary_results['npv_mean']
+        npv_std = summary_results['npv_std']
+        percentiles = summary_results['npv_percentiles']
+        
+        sign = "+" if npv_mean >= 0 else ""
+        lines.append(f"  Expected NPV: {sign}${npv_mean:,.0f}")
+        lines.append(f"  Std Dev of NPV: ${npv_std:,.0f}")
+        lines.append(f"  5th Percentile NPV: ${percentiles['5th']:,.0f}")
+        lines.append(f"  25th Percentile NPV: ${percentiles['25th']:,.0f}")
+        lines.append(f"  50th Percentile NPV: ${percentiles['50th']:,.0f}")
+        lines.append(f"  75th Percentile NPV: ${percentiles['75th']:,.0f}")
+        lines.append(f"  95th Percentile NPV: ${percentiles['95th']:,.0f}")
+        lines.append("-" * 40)
+        
+        # Risk Metrics section
+        lines.append("Risk Metrics:")
+        peak_epe = summary_results.get('peak_epe', 0.0)
+        peak_epe_period = summary_results.get('peak_epe_period', 0)
+        payment_frequency = summary_results.get('payment_frequency', 4)
+        
+        if peak_epe_period > 0:
+            # Calculate time in years when peak EPE occurs
+            peak_epe_time_years = peak_epe_period / payment_frequency
+            lines.append(f"  Peak EPE (at {peak_epe_time_years:.2f} years): ${peak_epe:,.0f}")
+        else:
+            lines.append(f"  Peak EPE: ${peak_epe:,.0f}")
+        
+        # Additional simulation info
+        lines.append("-" * 40)
+        lines.append(f"Simulation Details:")
+        lines.append(f"  Number of Simulations: {summary_results.get('num_simulations', 0):,}")
+        lines.append(f"  Payment Frequency: {payment_frequency} per year")
+        
+        return "\n".join(lines)

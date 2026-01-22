@@ -169,7 +169,7 @@ with col1:
             
             # Add manual overrides if provided
             if use_manual:
-                if initial_price:
+                if initial_price is not None:
                     params["initial_price"] = initial_price
                 if dividend_yield is not None:
                     params["dividend_yield"] = dividend_yield

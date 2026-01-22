@@ -74,11 +74,11 @@ class TRSVisualizer:
         """Plot Expected Positive Exposure over time."""
         fig, ax = self._create_figure()
         
-        if len(epe_profile) == 0:
+        if len(epe_profile) == 0 or len(dates) == 0:
             ax.text(0.5, 0.5, 'No EPE data available', transform=ax.transAxes, ha='center', va='center')
             return fig
         
-        is_datetime = isinstance(dates[0], datetime)
+        is_datetime = isinstance(dates[0], datetime) if len(dates) > 0 else False
         x_data = dates if is_datetime else np.arange(1, len(epe_profile) + 1)
         ax.plot(x_data, epe_profile, 'b-', linewidth=2, marker='o', markersize=4)
         

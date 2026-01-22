@@ -82,9 +82,6 @@ The project is structured around the following classes:
 | `visualization` | `TRSVisualizer` | Plots. `plot_simulated_price_paths`, `plot_npv_distribution`, `plot_epe_profile`, `plot_cash_flow_analysis`. |
 | `trs_pricer` | `TRSPricer` | Orchestrator. `get_user_inputs`, `run_simulation`, `generate_summary_report`. Uses the above classes (or injected equivalents). |
 
-**Module-level API (backward compatibility):**  
-`trs_pricer` exposes `get_user_inputs`, `run_simulation`, and `generate_summary_report` as functions that delegate to a default `TRSPricer` instance. `main.py` uses these.
-
 ---
 
 ## **4. Sample Usage & Expected Output**
@@ -121,25 +118,6 @@ for fig in figs:
     plt.show()
 ```
 
-### **Module-level API (as in `main.py`)**
-
-```python
-from trs_pricer import run_simulation, generate_summary_report
-import matplotlib.pyplot as plt
-
-params = {
-    "ticker": "MSFT",
-    "notional": 5_000_000,
-    "tenor": 2,
-    "payment_frequency": 4,
-    "num_simulations": 5000,
-}
-summary_results, figs = run_simulation(params)
-print(generate_summary_report(summary_results))
-for fig in figs:
-    plt.show()
-```
-
 ### **Manual overrides**
 
 ```python
@@ -155,7 +133,12 @@ params_manual = {
     "volatility": 0.25,
     "num_simulations": 5000,
 }
-summary_results, figs = run_simulation(params_manual)
+pricer = TRSPricer()
+summary_results, figs = pricer.run_simulation(params_manual)
+report = pricer.generate_summary_report(summary_results)
+print(report)
+for fig in figs:
+    plt.show()
 ```
 
 ### **Expected console output (snippet)**
@@ -238,39 +221,34 @@ Exact numbers depend on market data and simulation seed. Benchmark and spread li
   - Each method returns `plt.Figure`
   - Includes helper methods `_create_figure` and `_finalize_plot` for consistent styling
 
-❌ **Remaining Implementation Steps:**
+- **`trs_pricer.py` → `TRSPricer.run_simulation`** - Fully implemented with:
+  - Complete pipeline orchestration: resolve inputs → simulate paths → cash flows → NPV/EPE → plots
+  - Calls `get_user_inputs(params)` to resolve all parameters
+  - Uses `SimulationEngine.simulate_price_paths(...)` to generate price paths
+  - Uses `CashFlowEngine.calculate_cash_flows(...)` to compute cash flows per path
+  - Calculates NPV for each path using `ValuationEngine.calculate_npv(...)`
+  - Computes EPE profile using `ValuationEngine.calculate_exposure_metrics(...)`
+  - Aggregates results using `ValuationEngine.aggregate_results(...)`
+  - Generates all plots using `TRSVisualizer` methods
+  - Returns `(summary_results: Dict, figures: List[plt.Figure])`
 
-### **Phase 3: Integration (Remaining)**
+- **`trs_pricer.py` → `TRSPricer.generate_summary_report`** - Fully implemented with:
+  - Formats `summary_results` as console report
+  - Includes trade details (ticker, notional, tenor)
+  - Displays market data (auto-fetched values with sources)
+  - Shows valuation metrics (expected NPV, std dev, percentiles)
+  - Reports risk metrics (peak EPE, timing)
+  - Returns formatted `str`
 
-### **Phase 3: Integration**
+- **`main.py`** - Fully implemented with:
+  - Main execution function demonstrating minimal parameter usage
+  - Manual override example function
+  - Error handling for robust execution
+  - Uses class-based API: `TRSPricer` instance methods
 
-8. **`trs_pricer.py` → `TRSPricer.run_simulation`**  
-   Implement full pipeline:
-   - Call `get_user_inputs(params)` to resolve all parameters
-   - `SimulationEngine.simulate_price_paths(...)` → price paths
-   - `CashFlowEngine.calculate_cash_flows(price_paths, params)` → cash flows per path
-   - For each path: `ValuationEngine.calculate_npv(...)` → NPV list
-   - `ValuationEngine.calculate_exposure_metrics(...)` → EPE profile
-   - `ValuationEngine.aggregate_results(...)` → summary statistics
-   - `TRSVisualizer` methods → generate all plots
-   - Return `(summary_results: Dict, figures: List[plt.Figure])`
+✅ **All implementation steps completed!**
 
-9. **`trs_pricer.py` → `TRSPricer.generate_summary_report`**  
-   Format `summary_results` as console report:
-   - Trade details (ticker, notional, tenor)
-   - Market data (auto-fetched values with sources)
-   - Valuation metrics (expected NPV, std dev, percentiles)
-   - Risk metrics (peak EPE, timing)
-   - Returns formatted `str`
-
-10. **`trs_pricer.py` → Module-level API functions**  
-    Implement convenience functions that delegate to default `TRSPricer` instance:
-    - `get_user_inputs(params)` → `TRSPricer().get_user_inputs(params)`
-    - `run_simulation(params)` → `TRSPricer().run_simulation(params)`
-    - `generate_summary_report(summary_results)` → `TRSPricer().generate_summary_report(summary_results)`
-
-11. **`main.py`** (Already structured, will work once above are implemented)  
-    Uses module-level API: `run_simulation` and `generate_summary_report`
+---
 
 ### **Dependencies flow**
 
@@ -279,25 +257,175 @@ config.py ✅
     ↓
 MarketDataFetcher (market_data) ✅
     ↓
-TRSPricer.get_user_inputs ✅ (Step 5)
+TRSPricer.get_user_inputs ✅
     ↓
-SimulationEngine (simulation) ✅ (Step 3)
+SimulationEngine (simulation) ✅
     ↓
-CashFlowEngine (cash_flows) ✅ (Step 4)
+CashFlowEngine (cash_flows) ✅
     ↓
-ValuationEngine (valuation) ✅ (Step 6)
+ValuationEngine (valuation) ✅
     ↓
-TRSVisualizer (visualization) ✅ (Step 7)
+TRSVisualizer (visualization) ✅
     ↓
-TRSPricer.run_simulation / generate_summary_report ❌ (Steps 8-9)
+TRSPricer.run_simulation / generate_summary_report ✅
     ↓
-main.py ✅ (structure ready, waiting on implementation)
+main.py ✅
 ```
 
-**Legend:** ✅ = Completed, ❌ = Pending implementation
+**Legend:** ✅ = Completed
 
-### **Implementation tips**
-1. Implement and test each class in isolation before wiring.  
-2. Use config defaults and fallbacks for all market data.  
-3. Validate inputs (e.g. positive notional, valid tenor).  
-4. Handle missing/invalid tickers and empty series gracefully.
+---
+
+## **6. Installation & Setup**
+
+### **Prerequisites**
+- Python 3.8 or higher
+- pip (Python package manager)
+
+### **Installation Steps**
+
+1. **Clone or download the project** to your local machine
+
+2. **Navigate to the project directory:**
+   ```bash
+   cd trs-pricer
+   ```
+
+3. **Install required dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+   
+   This will install:
+   - `numpy>=1.24.0` - Numerical computations
+   - `pandas>=2.0.0` - Data manipulation
+   - `matplotlib>=3.7.0` - Plotting and visualization
+   - `yfinance>=0.2.0` - Market data fetching
+   - `streamlit>=1.28.0` - Web UI framework (for Streamlit app)
+
+4. **Verify installation:**
+   ```bash
+   python -c "import numpy, pandas, matplotlib, yfinance; print('All dependencies installed successfully!')"
+   ```
+
+---
+
+## **7. Running the Project**
+
+### **Option 1: Streamlit Web UI (Recommended)**
+
+The easiest way to run the simulator is through the interactive Streamlit web interface:
+
+1. **Launch the Streamlit app**:
+   ```bash
+   streamlit run streamlit_app.py
+   ```
+
+2. **Open your browser** - Streamlit will automatically open a browser window, or navigate to `http://localhost:8501`
+
+3. **Use the interface**:
+   - Enter parameters in the sidebar (ticker, notional, tenor, etc.)
+   - Optionally enable manual overrides for market data
+   - Click "Run Simulation"
+   - View results, metrics, and visualizations in the main area
+
+The Streamlit UI provides:
+- ✅ Interactive parameter input with validation
+- ✅ Real-time simulation execution with progress indicators
+- ✅ Visual display of all results and plots in organized tabs
+- ✅ Key metrics dashboard
+- ✅ Easy parameter customization
+- ✅ Manual override options for market data
+
+### **Option 2: Command Line Interface**
+
+Run the main script with default parameters:
+
+```bash
+python main.py
+```
+
+This will:
+1. Fetch market data for MSFT (Microsoft) automatically
+2. Run 5000 Monte Carlo simulations
+3. Generate a summary report in the console
+4. Display 4 visualization plots (price paths, NPV distribution, EPE profile, cash flow analysis)
+
+### **Customizing Parameters**
+
+Edit `main.py` to customize the simulation parameters:
+
+```python
+params = {
+    'ticker': 'AAPL',              # Change ticker symbol
+    'notional': 10_000_000,        # Change notional amount
+    'tenor': 1,                    # Change swap duration (years)
+    'payment_frequency': 4,        # Change payment frequency (4 = quarterly)
+    'num_simulations': 10000,      # Change number of simulations
+}
+```
+
+### **Using Manual Overrides**
+
+To use manual parameters instead of auto-fetched market data, modify `main.py` to call `main_manual()`:
+
+```python
+if __name__ == "__main__":
+    main_manual()  # Use manual parameters
+```
+
+Or create your own function with custom parameters:
+
+```python
+from trs_pricer import TRSPricer
+import matplotlib.pyplot as plt
+
+pricer = TRSPricer()
+params = {
+    'ticker': 'TSLA',
+    'notional': 1_000_000,
+    'tenor': 1,
+    'payment_frequency': 12,  # Monthly payments
+    'num_simulations': 1000,
+    'volatility': 0.40,        # Manual override
+    'benchmark_rate': 0.04,   # Manual override
+}
+
+summary_results, figs = pricer.run_simulation(params)
+report = pricer.generate_summary_report(summary_results)
+print(report)
+
+for fig in figs:
+    plt.show()
+```
+
+### **Expected Runtime**
+
+- **Market data fetching**: 2-5 seconds (first run, cached on subsequent runs)
+- **Simulation (1000 paths)**: 1-3 seconds
+- **Simulation (5000 paths)**: 5-15 seconds
+- **Simulation (10000 paths)**: 15-30 seconds
+- **Plot generation**: 1-2 seconds
+
+*Note: Runtime depends on network speed for market data and system performance for simulations.*
+
+### **Troubleshooting**
+
+**Issue: Market data fetch fails**
+- Check internet connection
+- Verify ticker symbol is valid (e.g., 'MSFT', 'AAPL', 'GOOGL')
+- Some tickers may have limited data availability
+
+**Issue: Import errors**
+- Ensure all dependencies are installed: `pip install -r requirements.txt`
+- Verify Python version is 3.8 or higher: `python --version`
+
+**Issue: Plots not displaying**
+- Ensure matplotlib backend is properly configured
+- On headless servers, plots may need to be saved instead of displayed
+
+**Issue: Memory errors with large simulations**
+- Reduce `num_simulations` parameter
+- Close other applications to free up memory
+
+---

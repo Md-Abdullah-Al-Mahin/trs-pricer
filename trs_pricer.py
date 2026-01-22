@@ -6,6 +6,7 @@ Main orchestrator for TRS pricing simulation.
 from typing import Dict, Tuple, List, Any, Optional, Callable
 
 import matplotlib.pyplot as plt
+import numpy as np
 
 from config import DEFAULT_BENCHMARK_RATE
 from market_data import MarketDataFetcher
@@ -128,8 +129,91 @@ class TRSPricer:
         """
         Run full pipeline: resolve inputs → simulate paths → cash flows → NPV/EPE → plots.
         Returns (summary_results, figures).
+        
+        Args:
+            params: Dictionary with user-provided parameters (see get_user_inputs for details)
+        
+        Returns:
+            Tuple of (summary_results, figures) where:
+                - summary_results: Dictionary with aggregated statistics and metrics
+                - figures: List of matplotlib Figure objects for all plots
         """
-        raise NotImplementedError
+        # Step 1: Resolve all parameters (auto-fetch market data if needed)
+        resolved_params = self.get_user_inputs(params)
+        
+        # Step 2: Simulate price paths using GBM
+        price_paths = self._sim.simulate_price_paths(
+            initial_price=resolved_params["initial_price"],
+            tenor=resolved_params["tenor"],
+            volatility=resolved_params["volatility"],
+            payment_frequency=resolved_params["payment_frequency"],
+            num_simulations=resolved_params["num_simulations"],
+            benchmark_rate=resolved_params["benchmark_rate"],
+        )
+        
+        # Step 3: Calculate cash flows for each simulation path
+        cash_flows_list = self._cf.calculate_cash_flows(price_paths, resolved_params)
+        
+        # Step 4: Calculate NPV for each path
+        npv_list = []
+        for cash_flows_df in cash_flows_list:
+            npv = self._val.calculate_npv(
+                cash_flows_df["net_cash_flow"],
+                resolved_params["benchmark_rate"],
+                resolved_params["payment_frequency"],
+            )
+            npv_list.append(npv)
+        
+        # Step 5: Calculate exposure metrics (EPE profile)
+        epe_profile, epe_dates = self._val.calculate_exposure_metrics(cash_flows_list, resolved_params)
+        
+        # Step 6: Aggregate results (summary statistics)
+        summary_results = self._val.aggregate_results(cash_flows_list, npv_list)
+        
+        # Add additional metadata to summary_results
+        summary_results.update({
+            "ticker": resolved_params["ticker"],
+            "notional": resolved_params["notional"],
+            "tenor": resolved_params["tenor"],
+            "payment_frequency": resolved_params["payment_frequency"],
+            "num_simulations": resolved_params["num_simulations"],
+            "initial_price": resolved_params["initial_price"],
+            "dividend_yield": resolved_params["dividend_yield"],
+            "volatility": resolved_params["volatility"],
+            "funding_spread": resolved_params["funding_spread"],
+            "benchmark_rate": resolved_params["benchmark_rate"],
+            "effective_funding_rate": resolved_params["effective_funding_rate"],
+            "epe_profile": epe_profile,
+            "epe_dates": epe_dates,
+            "peak_epe": float(np.max(epe_profile)) if len(epe_profile) > 0 else 0.0,
+            "peak_epe_period": int(np.argmax(epe_profile)) + 1 if len(epe_profile) > 0 else 0,
+        })
+        
+        # Step 7: Generate all plots
+        figures = []
+        
+        # Plot simulated price paths
+        fig1 = self._viz.plot_simulated_price_paths(
+            price_paths,
+            num_paths_to_plot=20,
+            tenor=resolved_params["tenor"],
+            payment_frequency=resolved_params["payment_frequency"],
+        )
+        figures.append(fig1)
+        
+        # Plot NPV distribution
+        fig2 = self._viz.plot_npv_distribution(npv_list)
+        figures.append(fig2)
+        
+        # Plot EPE profile
+        fig3 = self._viz.plot_epe_profile(epe_profile, epe_dates)
+        figures.append(fig3)
+        
+        # Plot cash flow analysis
+        fig4 = self._viz.plot_cash_flow_analysis(cash_flows_list, num_simulations_to_plot=10)
+        figures.append(fig4)
+        
+        return summary_results, figures
 
     def generate_summary_report(self, summary_results: Dict[str, Any]) -> str:
         """Format simulation results as a console report."""

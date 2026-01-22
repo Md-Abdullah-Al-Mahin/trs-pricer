@@ -291,7 +291,23 @@ main.py ✅
    cd trs-pricer
    ```
 
-3. **Install required dependencies:**
+3. **Create a virtual environment (recommended):**
+   
+   **On macOS/Linux:**
+   ```bash
+   python3 -m venv venv
+   source venv/bin/activate
+   ```
+   
+   **On Windows:**
+   ```bash
+   python -m venv venv
+   venv\Scripts\activate
+   ```
+   
+   You should see `(venv)` in your terminal prompt, indicating the virtual environment is active.
+
+4. **Install required dependencies:**
    ```bash
    pip install -r requirements.txt
    ```
@@ -303,10 +319,23 @@ main.py ✅
    - `yfinance>=0.2.0` - Market data fetching
    - `streamlit>=1.28.0` - Web UI framework (for Streamlit app)
 
-4. **Verify installation:**
+5. **Verify installation:**
    ```bash
-   python -c "import numpy, pandas, matplotlib, yfinance; print('All dependencies installed successfully!')"
+   python -c "import numpy, pandas, matplotlib, yfinance, streamlit; print('All dependencies installed successfully!')"
    ```
+
+### **Virtual Environment Notes**
+
+- **Activating the venv**: Always activate the virtual environment before running the project:
+  - macOS/Linux: `source venv/bin/activate`
+  - Windows: `venv\Scripts\activate`
+
+- **Deactivating the venv**: When you're done, deactivate with:
+  ```bash
+  deactivate
+  ```
+
+- **The `venv/` directory is already in `.gitignore`** and won't be committed to version control.
 
 ---
 

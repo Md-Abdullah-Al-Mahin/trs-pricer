@@ -179,3 +179,131 @@ Risk Metrics:
   Peak EPE (at 1.25 years): $155,200
 ```
 This outline provides the complete structure, logic, and specifications needed for an AI assistant to generate the functional code for a meaningful TRS pricing tool.
+
+## **5. Implementation Order**
+
+Follow this step-by-step order to implement the TRS pricing simulator, ensuring proper dependency management and incremental testing.
+
+### **Phase 1: Foundation & Core Calculations**
+
+#### **Step 1: Configuration Setup**
+- **File**: `config.py`
+- **Why First**: Contains constants and defaults used throughout the project
+- **Implementation**: Define all FRED series IDs, default values, and constants
+
+#### **Step 2: Market Data Module**
+- **File**: `market_data.py`
+- **Why Second**: Independent module with no dependencies on other project code
+- **Implementation Order**:
+  1. `fetch_current_price()` - Simplest, tests yfinance integration
+  2. `fetch_dividend_yield()` - Uses yfinance dividend history
+  3. `fetch_historical_volatility()` - Uses yfinance price history
+  4. `fetch_benchmark_rate()` - FRED API integration
+  5. `estimate_funding_spread()` - Most complex, uses FRED or fallback methods
+- **Testing**: Test each function independently with real tickers
+
+#### **Step 3: Input Processing**
+- **File**: `trs_pricer.py` → `get_user_inputs()`
+- **Why Third**: Depends on market_data module to auto-populate parameters
+- **Implementation**: 
+  - Validate required parameters
+  - Call market_data functions with fallback logic
+  - Calculate derived parameters (e.g., `effective_funding_rate`)
+  - Return complete parameter dictionary
+
+#### **Step 4: Path Simulation**
+- **File**: `simulation.py`
+- **Why Fourth**: Uses parameters from input processing, independent of cash flows
+- **Implementation Order**:
+  1. `calculate_time_step()` - Helper function
+  2. `simulate_price_paths()` - GBM implementation
+- **Testing**: Verify price paths are reasonable (positive, no NaN values)
+
+#### **Step 5: Cash Flow Engine**
+- **File**: `cash_flows.py`
+- **Why Fifth**: Depends on price paths from simulation
+- **Implementation Order**:
+  1. `calculate_total_return_leg()` - Price appreciation + dividends
+  2. `calculate_funding_leg()` - Funding payments
+  3. `calculate_cash_flows()` - Main orchestrator, uses helper functions
+- **Testing**: Verify cash flows match expected formulas, test edge cases
+
+### **Phase 2: Analysis & Visualization**
+
+#### **Step 6: Valuation Module**
+- **File**: `valuation.py`
+- **Why Sixth**: Depends on cash flows from previous step
+- **Implementation Order**:
+  1. `calculate_npv()` - Discount cash flows to present value
+  2. `calculate_marked_to_market_value()` - MTM at intermediate periods
+  3. `calculate_exposure_metrics()` - EPE profile calculation
+  4. `aggregate_results()` - Summary statistics
+- **Testing**: Verify NPV calculations with known test cases
+
+#### **Step 7: Visualization Module**
+- **File**: `visualization.py`
+- **Why Seventh**: Depends on all previous modules for data
+- **Implementation Order**:
+  1. `plot_simulated_price_paths()` - Visualize GBM paths
+  2. `plot_npv_distribution()` - Histogram of NPVs
+  3. `plot_epe_profile()` - EPE over time
+  4. `plot_cash_flow_analysis()` - Optional detailed analysis
+- **Testing**: Verify plots generate without errors, check labels/formatting
+
+### **Phase 3: Integration & Presentation**
+
+#### **Step 8: Main Orchestrator**
+- **File**: `trs_pricer.py` → `run_simulation()`
+- **Why Eighth**: Orchestrates all previous modules
+- **Implementation**:
+  - Call `get_user_inputs()` to process parameters
+  - Call `simulate_price_paths()` to generate scenarios
+  - Call `calculate_cash_flows()` for each path
+  - Call valuation functions for NPV and EPE
+  - Call visualization functions
+  - Return results and figures
+
+#### **Step 9: Report Generation**
+- **File**: `trs_pricer.py` → `generate_summary_report()`
+- **Why Ninth**: Formats results from orchestrator
+- **Implementation**: Format console output matching README example
+
+#### **Step 10: Entry Point**
+- **File**: `main.py`
+- **Why Last**: Ties everything together
+- **Implementation**: 
+  - Example usage with auto-fetched data
+  - Example usage with manual overrides
+  - Error handling and user feedback
+
+### **Dependencies Flow**
+
+```
+config.py (constants)
+    ↓
+market_data.py (data fetching)
+    ↓
+get_user_inputs() (parameter processing)
+    ↓
+simulation.py (price paths)
+    ↓
+cash_flows.py (cash flow calculations)
+    ↓
+valuation.py (NPV, EPE, aggregation)
+    ↓
+visualization.py (plotting)
+    ↓
+run_simulation() (orchestration)
+    ↓
+generate_summary_report() (formatting)
+    ↓
+main.py (entry point)
+```
+
+### **Implementation Tips**
+
+1. **Start Simple**: Implement basic versions first, add error handling later
+2. **Test Incrementally**: Test each function before moving to the next
+3. **Use Fallbacks**: Always implement fallback logic for market data fetching
+4. **Handle Edge Cases**: Empty data, missing API keys, invalid tickers
+5. **Validate Inputs**: Check parameter ranges (e.g., positive notional, valid tenor)

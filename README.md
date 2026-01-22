@@ -201,49 +201,46 @@ Exact numbers depend on market data and simulation seed. Benchmark and spread li
   - `estimate_funding_spread` - Hybrid multi-factor model (beta, vol, market cap, sector, leverage)
   - Ticker caching for performance
 
+- **`simulation.py` → `SimulationEngine`** - Fully implemented with:
+  - `calculate_time_step(tenor, payment_frequency)` - Returns `1 / payment_frequency`
+  - `simulate_price_paths(...)` - GBM simulation using risk-neutral drift:
+    - `dt = 1 / payment_frequency`
+    - For each path: `price[t] = price[t-1] * exp((mu - 0.5*vol²)*dt + vol*sqrt(dt)*Z)`
+    - `mu = benchmark_rate` (risk-neutral), `Z ~ N(0,1)`
+    - Returns `np.ndarray` of shape `(num_simulations, num_periods + 1)`
+
+- **`cash_flows.py` → `CashFlowEngine`** - Fully implemented with:
+  - `calculate_total_return_leg(...)` - Calculates appreciation + dividends (desk → client)
+  - `calculate_funding_leg(...)` - Calculates funding minus depreciation offset (client → desk)
+  - `calculate_cash_flows(price_paths, params)` - Computes cash flows for all paths and periods
+  - Returns `List[pd.DataFrame]` with columns: `period`, `period_start_price`, `period_end_price`, `total_return_cash_flow`, `net_funding_cash_flow`, `net_cash_flow`
+
+- **`trs_pricer.py` → `TRSPricer.get_user_inputs`** - Fully implemented with:
+  - Validates required params (`ticker`, `notional`, `tenor`, `payment_frequency`, `num_simulations`)
+  - Uses `MarketDataFetcher` to auto-fetch: `initial_price`, `dividend_yield`, `volatility`, `funding_spread`
+  - Uses user override or `config.DEFAULT_BENCHMARK_RATE` for `benchmark_rate`
+  - Calculates `effective_funding_rate = benchmark_rate + funding_spread`
+  - Returns resolved `Dict[str, Any]` with all parameters
+  - Includes helper methods for validation and parameter resolution
+
+- **`valuation.py` → `ValuationEngine`** - Fully implemented with:
+  - `calculate_npv(cash_flows_series, benchmark_rate, payment_frequency)` - Discounts net cash flows at `benchmark_rate` per period
+  - `calculate_marked_to_market_value(...)` - Calculates PV of future cash flows from `current_period` onward
+  - `calculate_exposure_metrics(cash_flows_list, params)` - Computes EPE profile: for each period, averages `max(0, MTM)` across all paths
+  - `aggregate_results(all_simulated_cash_flows, npv_list)` - Summary statistics: mean/std NPV, percentiles (5th, 25th, 50th, 75th, 95th), mean periodic net cash flows
+  - Includes helper method `_discount_cash_flows` for common discounting logic
+
+- **`visualization.py` → `TRSVisualizer`** - Fully implemented with:
+  - `plot_simulated_price_paths(...)` - Plots sample price paths over time with mean path overlay
+  - `plot_npv_distribution(npv_list)` - Histogram of desk NPV across simulations with mean indicator
+  - `plot_epe_profile(epe_profile, dates)` - Line plot of Expected Positive Exposure over time with peak EPE markers
+  - `plot_cash_flow_analysis(cash_flows_series, num_simulations_to_plot)` - Net cash flow over periods for sample simulations with mean overlay
+  - Each method returns `plt.Figure`
+  - Includes helper methods `_create_figure` and `_finalize_plot` for consistent styling
+
 ❌ **Remaining Implementation Steps:**
 
-### **Phase 1: Foundation & Core (Remaining)**
-
-3. **`simulation.py` → `SimulationEngine`**  
-   Implement:
-   - `calculate_time_step(tenor, payment_frequency)` - Returns `1 / payment_frequency`
-   - `simulate_price_paths(initial_price, tenor, volatility, payment_frequency, num_simulations, benchmark_rate, seed)` - GBM simulation:
-     - `dt = 1 / payment_frequency`
-     - For each path: `price[t] = price[t-1] * exp((mu - 0.5*vol²)*dt + vol*sqrt(dt)*Z)`
-     - `mu = benchmark_rate` (risk-neutral), `Z ~ N(0,1)`
-     - Returns `np.ndarray` of shape `(num_simulations, num_periods + 1)`
-
-4. **`cash_flows.py` → `CashFlowEngine`**  
-   Implement:
-   - `calculate_total_return_leg(period_start_price, period_end_price, dividend_yield, notional, payment_frequency)` - Returns: `(period_end - period_start)/period_start * notional + (dividend_yield / payment_frequency) * notional`
-   - `calculate_funding_leg(period_start_price, period_end_price, effective_funding_rate, notional, payment_frequency)` - Returns: `(effective_funding_rate / payment_frequency) * notional - max(0, period_start - period_end)/period_start * notional`
-   - `calculate_cash_flows(price_paths, params)` - For each simulation path, compute cash flows per period. Returns `List[pd.DataFrame]` with columns: `period_start_price`, `period_end_price`, `total_return_cash_flow`, `net_funding_cash_flow`, `net_cash_flow`
-
-5. **`trs_pricer.py` → `TRSPricer.get_user_inputs`**  
-   Implement:
-   - Validate required params (`ticker`, `notional`, `tenor`, `payment_frequency`, `num_simulations`)
-   - Use `MarketDataFetcher` to auto-fetch: `initial_price`, `dividend_yield`, `volatility`, `funding_spread`
-   - Use user override or `config.DEFAULT_BENCHMARK_RATE` for `benchmark_rate`
-   - Calculate `effective_funding_rate = benchmark_rate + funding_spread`
-   - Return resolved `Dict[str, Any]` with all parameters
-
-### **Phase 2: Analysis & Visualization**
-
-6. **`valuation.py` → `ValuationEngine`**  
-   Implement:
-   - `calculate_npv(cash_flows_series, benchmark_rate, payment_frequency)` - Discount net cash flows at `benchmark_rate` per period
-   - `calculate_marked_to_market_value(cash_flows_df, benchmark_rate, payment_frequency, current_period)` - PV of future cash flows from `current_period` onward
-   - `calculate_exposure_metrics(cash_flows_list, params)` - EPE profile: for each period, average `max(0, MTM)` across all paths. Returns `(epe_profile, dates)` as `Tuple[np.ndarray, np.ndarray]`
-   - `aggregate_results(all_simulated_cash_flows, npv_list)` - Summary statistics: mean/std NPV, percentiles (5th, 25th, 50th, 75th, 95th), mean periodic net cash flows. Returns `Dict`
-
-7. **`visualization.py` → `TRSVisualizer`**  
-   Implement:
-   - `plot_simulated_price_paths(price_paths, num_paths_to_plot, tenor, payment_frequency)` - Plot sample paths over time
-   - `plot_npv_distribution(npv_list)` - Histogram of desk NPV across simulations
-   - `plot_epe_profile(epe_profile, dates)` - Line plot of Expected Positive Exposure over time
-   - `plot_cash_flow_analysis(cash_flows_series, num_simulations_to_plot)` - Net cash flow over periods for sample simulations
-   - Each method returns `plt.Figure`
+### **Phase 3: Integration (Remaining)**
 
 ### **Phase 3: Integration**
 
@@ -282,15 +279,15 @@ config.py ✅
     ↓
 MarketDataFetcher (market_data) ✅
     ↓
-TRSPricer.get_user_inputs ❌ (Step 5)
+TRSPricer.get_user_inputs ✅ (Step 5)
     ↓
-SimulationEngine (simulation) ❌ (Step 3)
+SimulationEngine (simulation) ✅ (Step 3)
     ↓
-CashFlowEngine (cash_flows) ❌ (Step 4)
+CashFlowEngine (cash_flows) ✅ (Step 4)
     ↓
-ValuationEngine (valuation) ❌ (Step 6)
+ValuationEngine (valuation) ✅ (Step 6)
     ↓
-TRSVisualizer (visualization) ❌ (Step 7)
+TRSVisualizer (visualization) ✅ (Step 7)
     ↓
 TRSPricer.run_simulation / generate_summary_report ❌ (Steps 8-9)
     ↓

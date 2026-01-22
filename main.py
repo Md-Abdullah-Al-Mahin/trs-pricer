@@ -18,8 +18,6 @@ def main():
         'tenor': 2,
         'payment_frequency': 4,
         'num_simulations': 5000,
-        # Optional: provide FRED API key for benchmark rate and spread fetching
-        # 'fred_api_key': 'your_api_key_here'
     }
     
     # Run the simulation - market data is fetched automatically

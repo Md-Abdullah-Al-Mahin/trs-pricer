@@ -12,8 +12,7 @@ from market_data import (
     fetch_current_price,
     fetch_dividend_yield,
     fetch_historical_volatility,
-    fetch_benchmark_rate,
-    estimate_funding_spread
+    estimate_funding_spread,
 )
 from simulation import simulate_price_paths
 from cash_flows import calculate_cash_flows
@@ -42,7 +41,6 @@ def get_user_inputs(params: Dict) -> Dict:
             - tenor: Swap duration in years (required)
             - payment_frequency: Number of periods per year (required)
             - num_simulations: Number of simulations (required)
-            - fred_api_key: Optional FRED API key
             
     Returns:
         Complete parameter dictionary with all values populated

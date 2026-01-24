@@ -32,7 +32,20 @@ class ValuationEngine:
         if len(cash_flows_series) == 0:
             return 0.0
         period_rate = benchmark_rate / payment_frequency
-        return ValuationEngine._discount_cash_flows(cash_flows_series.values, period_rate)
+        # #region agent log
+        import json
+        with open('/Users/mdabdullahalmahin/Desktop/Projects/trs-pricer/.cursor/debug.log', 'a') as f:
+            f.write(json.dumps({"sessionId":"debug-session","runId":"post-fix","hypothesisId":"D","location":"valuation.py:34","message":"NPV calculation inputs","data":{"benchmark_rate":benchmark_rate,"payment_frequency":payment_frequency,"period_rate":period_rate,"num_periods":len(cash_flows_series),"cash_flows":cash_flows_series.values.tolist()},"timestamp":int(__import__('time').time()*1000)})+'\n')
+        # #endregion
+        npv = ValuationEngine._discount_cash_flows(cash_flows_series.values, period_rate)
+        # #region agent log
+        with open('/Users/mdabdullahalmahin/Desktop/Projects/trs-pricer/.cursor/debug.log', 'a') as f:
+            periods = __import__('numpy').arange(1, len(cash_flows_series) + 1)
+            discount_factors = (1 + period_rate) ** (-periods)
+            discounted_flows = cash_flows_series.values * discount_factors
+            f.write(json.dumps({"sessionId":"debug-session","runId":"post-fix","hypothesisId":"D","location":"valuation.py:40","message":"NPV calculation result","data":{"npv":npv,"discount_factors":discount_factors.tolist(),"discounted_flows":discounted_flows.tolist(),"sum_undiscounted":float(__import__('numpy').sum(cash_flows_series.values))},"timestamp":int(__import__('time').time()*1000)})+'\n')
+        # #endregion
+        return npv
 
     def calculate_marked_to_market_value(
         self,
@@ -85,7 +98,7 @@ class ValuationEngine:
         all_simulated_cash_flows: List[pd.DataFrame],
         npv_list: List[float],
     ) -> Dict:
-        """Calculate summary statistics: mean/std NPV, percentiles, mean periodic net cash flows."""
+        """Calculate summary statistics: mean/std NPV, percentiles, mean periodic net cash flows, and total cash flows for both legs."""
         npv_array = np.array(npv_list)
         percentiles = [5, 25, 50, 75, 95]
         
@@ -95,11 +108,27 @@ class ValuationEngine:
             if all_simulated_cash_flows else []
         )
         
+        # Calculate total cash flows for both legs (sum across all periods, mean across simulations)
+        if all_simulated_cash_flows:
+            total_return_leg_totals = [
+                float(df["total_return_cash_flow"].sum()) for df in all_simulated_cash_flows
+            ]
+            funding_leg_totals = [
+                float(df["net_funding_cash_flow"].sum()) for df in all_simulated_cash_flows
+            ]
+            mean_total_return_leg = float(np.mean(total_return_leg_totals))
+            mean_funding_leg = float(np.mean(funding_leg_totals))
+        else:
+            mean_total_return_leg = 0.0
+            mean_funding_leg = 0.0
+        
         return {
             "npv_mean": float(np.mean(npv_array)),
             "npv_std": float(np.std(npv_array)),
             "npv_percentiles": {f"{p}th": float(np.percentile(npv_array, p)) for p in percentiles},
             "mean_periodic_net_cash_flows": mean_periodic_flows,
+            "total_return_leg_total": mean_total_return_leg,
+            "funding_leg_total": mean_funding_leg,
         }
     
     def calculate_delta_exposure(

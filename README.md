@@ -58,8 +58,8 @@ Base spread is adjusted by (1) additive terms: beta and volatility vs baseline, 
     Appreciation + dividends:  
     `(period_end - period_start)/period_start * notional + (dividend_yield / payment_frequency) * notional`  
 *   **Funding Leg (Client → Desk):**  
-    `(effective_funding_rate / payment_frequency) * notional - max(0, period_start - period_end)/period_start * notional`  
-    (depreciation netted against funding).  
+    `(effective_funding_rate / payment_frequency) * notional`  
+    (fixed payment regardless of stock movement; depreciation is handled in the total return leg).  
 *   **Net (to Desk):**  
     `net_cash_flow = net_funding_cash_flow - total_return_cash_flow`
 
@@ -194,7 +194,7 @@ Exact numbers depend on market data and simulation seed. Benchmark and spread li
 
 - **`cash_flows.py` → `CashFlowEngine`** - Fully implemented with:
   - `calculate_total_return_leg(...)` - Calculates appreciation + dividends (desk → client)
-  - `calculate_funding_leg(...)` - Calculates funding minus depreciation offset (client → desk)
+  - `calculate_funding_leg(...)` - Calculates fixed funding payment (client → desk)
   - `calculate_cash_flows(price_paths, params)` - Computes cash flows for all paths and periods
   - Returns `List[pd.DataFrame]` with columns: `period`, `period_start_price`, `period_end_price`, `total_return_cash_flow`, `net_funding_cash_flow`, `net_cash_flow`
 
@@ -546,3 +546,637 @@ Hedging Recommendation (Desk's Perspective):
 ```
 
 This extension adds significant practical value by closing the loop between risk measurement and risk management, making your simulator a comprehensive tool for understanding TRS economics.
+
+---
+
+## **Step-by-Step Implementation Guide: Hedging Recommendation Module**
+
+This section provides detailed implementation instructions for the hedging module skeleton code. Follow these steps in order to complete the implementation.
+
+### **Step 1: Implement Instrument Models**
+
+#### **1.1 Futures Model** (`trs_pricer/hedging/instruments/futures_model.py`)
+
+**Implement `__post_init__()`:**
+```python
+def __post_init__(self):
+    """Calculate number of contracts and hedge notional after initialization."""
+    if self.current_price <= 0:
+        raise ValueError("current_price must be positive")
+    if self.contract_size <= 0:
+        raise ValueError("contract_size must be positive")
+    
+    # Calculate number of contracts needed
+    # Formula: num_contracts = (notional * target_hedge_ratio) / (contract_size * current_price)
+    shares_to_hedge = (self.notional * self.target_hedge_ratio) / self.current_price
+    self.num_contracts = int(round(shares_to_hedge / self.contract_size))
+    
+    # Effective hedge notional
+    self.hedge_notional = self.num_contracts * self.contract_size * self.current_price
+```
+
+**Implement `to_dict()`:**
+```python
+def to_dict(self) -> Dict[str, Any]:
+    """Convert to dictionary for reporting."""
+    return {
+        "type": "EQUITY FUTURES",
+        "ticker": self.ticker,
+        "position": "LONG",
+        "num_contracts": self.num_contracts,
+        "contract_size": self.contract_size,
+        "current_price": self.current_price,
+        "hedge_notional": self.hedge_notional,
+        "target_hedge_ratio": self.target_hedge_ratio,
+        "objective": f"Hedge {self.target_hedge_ratio*100:.0f}% of delta exposure from short equity position",
+    }
+```
+
+#### **1.2 Interest Rate Swap Model** (`trs_pricer/hedging/instruments/swap_model.py`)
+
+**Implement `__post_init__()`:**
+```python
+def __post_init__(self):
+    """Validate parameters after initialization."""
+    if self.notional <= 0:
+        raise ValueError("notional must be positive")
+    if self.tenor <= 0:
+        raise ValueError("tenor must be positive")
+    if self.payment_frequency <= 0:
+        raise ValueError("payment_frequency must be positive")
+```
+
+**Implement `calculate_annual_payment()`:**
+```python
+def calculate_annual_payment(self) -> float:
+    """Calculate annual fixed payment amount."""
+    return self.notional * self.fixed_rate
+```
+
+**Implement `calculate_periodic_payment()`:**
+```python
+def calculate_periodic_payment(self) -> float:
+    """Calculate periodic (e.g., quarterly) fixed payment amount."""
+    return self.calculate_annual_payment() / self.payment_frequency
+```
+
+**Implement `to_dict()`:**
+```python
+def to_dict(self) -> Dict[str, Any]:
+    """Convert to dictionary for reporting."""
+    position = "RECEIVE FLOATING, PAY FIXED" if self.receive_floating else "PAY FLOATING, RECEIVE FIXED"
+    return {
+        "type": "INTEREST RATE SWAP",
+        "notional": self.notional,
+        "tenor": self.tenor,
+        "position": position,
+        "fixed_rate": self.fixed_rate,
+        "floating_rate_index": self.floating_rate_index,
+        "payment_frequency": self.payment_frequency,
+        "annual_payment": self.calculate_annual_payment(),
+        "periodic_payment": self.calculate_periodic_payment(),
+        "objective": f"Hedge floating rate payment liability by receiving {self.floating_rate_index} and paying fixed @ {self.fixed_rate*100:.2f}%",
+    }
+```
+
+#### **1.3 Options Model** (`trs_pricer/hedging/instruments/options_model.py`)
+
+**Implement `__post_init__()`:**
+```python
+def __post_init__(self):
+    """Calculate number of contracts and validate after initialization."""
+    if self.current_price <= 0:
+        raise ValueError("current_price must be positive")
+    if self.strike_price <= 0:
+        raise ValueError("strike_price must be positive")
+    if self.contract_size <= 0:
+        raise ValueError("contract_size must be positive")
+    if self.option_type.upper() not in ["PUT", "CALL"]:
+        raise ValueError("option_type must be 'PUT' or 'CALL'")
+    
+    # Calculate number of contracts needed to hedge notional
+    shares_to_hedge = self.notional / self.current_price
+    self.num_contracts = int(round(shares_to_hedge / self.contract_size))
+    
+    # Estimate premium if not provided (rough approximation based on moneyness)
+    if self.estimated_premium == 0.0:
+        moneyness = self.strike_price / self.current_price
+        if self.option_type.upper() == "PUT":
+            if moneyness < 0.95:  # Deep OTM
+                premium_rate = 0.02
+            elif moneyness < 1.0:  # OTM
+                premium_rate = 0.05
+            else:  # ITM or ATM
+                premium_rate = 0.08
+        else:  # CALL
+            if moneyness > 1.05:  # Deep OTM
+                premium_rate = 0.02
+            elif moneyness > 1.0:  # OTM
+                premium_rate = 0.05
+            else:  # ITM or ATM
+                premium_rate = 0.08
+        self.estimated_premium = self.notional * premium_rate
+```
+
+**Implement `to_dict()`:**
+```python
+def to_dict(self) -> Dict[str, Any]:
+    """Convert to dictionary for reporting."""
+    moneyness_pct = (self.strike_price / self.current_price - 1) * 100
+    return {
+        "type": f"EQUITY {self.option_type.upper()} OPTIONS",
+        "ticker": self.ticker,
+        "position": f"LONG {self.option_type.upper()}",
+        "strike_price": self.strike_price,
+        "current_price": self.current_price,
+        "moneyness": f"{moneyness_pct:+.1f}%",
+        "num_contracts": self.num_contracts,
+        "contract_size": self.contract_size,
+        "estimated_premium": self.estimated_premium,
+        "expiry_years": self.expiry_years,
+        "target_delta": self.target_delta,
+        "objective": f"Protect against underlying {'depreciation' if self.option_type.upper() == 'PUT' else 'appreciation'} below/above ${self.strike_price:.2f}",
+    }
+```
+
+---
+
+### **Step 2: Implement Valuation Engine Exposure Methods**
+
+#### **2.1 Delta Exposure** (`trs_pricer/core/valuation.py`)
+
+**Implement `calculate_delta_exposure()`:**
+```python
+def calculate_delta_exposure(
+    self,
+    cash_flows_list: List[pd.DataFrame],
+    price_paths: np.ndarray,
+    params: Dict,
+) -> float:
+    """
+    Calculate approximate delta exposure using finite difference method.
+    """
+    if price_paths.size == 0 or not cash_flows_list:
+        return 0.0
+    
+    initial_price = price_paths[0, 0]
+    price_shock = initial_price * 0.01  # 1% shock
+    
+    # For simplicity, use analytical approximation:
+    # Delta ≈ notional / initial_price for a TRS
+    notional = params.get("notional", 0.0)
+    
+    # More sophisticated: could recalculate NPV with shocked prices
+    # For now, use simple approximation
+    return notional / initial_price if initial_price > 0 else 0.0
+```
+
+#### **2.2 Funding Rate Exposure** (`trs_pricer/core/valuation.py`)
+
+**Implement `calculate_funding_rate_exposure()`:**
+```python
+def calculate_funding_rate_exposure(
+    self,
+    cash_flows_list: List[pd.DataFrame],
+    params: Dict,
+) -> float:
+    """
+    Calculate PV of funding leg to isolate interest rate risk.
+    """
+    if not cash_flows_list:
+        return 0.0
+    
+    benchmark_rate = params.get("benchmark_rate", 0.0)
+    payment_frequency = params.get("payment_frequency", 4)
+    period_rate = benchmark_rate / payment_frequency
+    
+    # Sum up all funding leg cash flows across all paths and periods
+    total_funding_pv = 0.0
+    for df in cash_flows_list:
+        for period_idx, row in df.iterrows():
+            period = row["period"]
+            funding_flow = row.get("net_funding_cash_flow", 0.0)
+            discount_factor = (1 + period_rate) ** (-period)
+            total_funding_pv += funding_flow * discount_factor
+    
+    # Average across all simulations
+    num_simulations = len(cash_flows_list)
+    return total_funding_pv / num_simulations
+```
+
+---
+
+### **Step 3: Implement Hedging Engine Core Methods**
+
+#### **3.1 Risk Identification** (`trs_pricer/hedging/hedging_engine.py`)
+
+**Implement `_identify_primary_risks()`:**
+```python
+def _identify_primary_risks(
+    self,
+    desk_position: str,
+    delta_exposure: float,
+    funding_rate_exposure: float,
+) -> List[str]:
+    """Identify primary risks based on desk position and exposures."""
+    risks = []
+    
+    if desk_position == "payer":
+        # Desk pays total return → short the asset → risk if asset appreciates
+        risks.append("Short Equity (asset appreciation risk)")
+    else:  # receiver
+        # Desk receives total return → long the asset → risk if asset depreciates
+        risks.append("Long Equity (asset depreciation risk)")
+        # Also short floating rate (pays funding) → risk if rates rise
+        if funding_rate_exposure > 0:
+            risks.append("Short Floating Rate (rising rate risk)")
+    
+    return risks
+```
+
+#### **3.2 Payer Hedge Recommendation** (`trs_pricer/hedging/hedging_engine.py`)
+
+**Implement `_recommend_payer_hedge()`:**
+```python
+def _recommend_payer_hedge(
+    self,
+    params: Dict[str, Any],
+    price_paths: np.ndarray,
+    delta_exposure: float,
+) -> List[Dict[str, Any]]:
+    """Recommend hedging strategy for Total Return Payer position."""
+    ticker = params["ticker"]
+    notional = params["notional"]
+    current_price = price_paths[0, 0] if price_paths.size > 0 else params.get("initial_price", 1.0)
+    
+    # Calculate futures hedge
+    futures_hedge = FuturesHedge(
+        ticker=ticker,
+        notional=notional,
+        current_price=current_price,
+        contract_size=self._config.DEFAULT_FUTURES_CONTRACT_SIZE,
+        target_hedge_ratio=self._config.DEFAULT_TARGET_HEDGE_RATIO,
+    )
+    
+    return [futures_hedge.to_dict()]
+```
+
+#### **3.3 Receiver Hedge Recommendation** (`trs_pricer/hedging/hedging_engine.py`)
+
+**Implement `_recommend_receiver_hedge()`:**
+```python
+def _recommend_receiver_hedge(
+    self,
+    params: Dict[str, Any],
+    price_paths: np.ndarray,
+    delta_exposure: float,
+    funding_rate_exposure: float,
+    summary_results: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """Recommend hedging strategy for Total Return Receiver position."""
+    recommendations = []
+    
+    # 1. Interest Rate Swap recommendation
+    notional = params["notional"]
+    tenor = params["tenor"]
+    benchmark_rate = params.get("benchmark_rate", 0.05)
+    payment_frequency = params.get("payment_frequency", 4)
+    
+    # Fixed rate = benchmark + buffer
+    fixed_rate = benchmark_rate + self._config.DEFAULT_IRS_FIXED_RATE_BUFFER
+    
+    irs_hedge = InterestRateSwapHedge(
+        notional=notional,
+        tenor=tenor,
+        fixed_rate=fixed_rate,
+        floating_rate_index="SOFR",
+        receive_floating=True,
+        payment_frequency=payment_frequency,
+    )
+    recommendations.append(irs_hedge.to_dict())
+    
+    # 2. Put Options recommendation
+    ticker = params["ticker"]
+    current_price = price_paths[0, 0] if price_paths.size > 0 else params.get("initial_price", 1.0)
+    
+    # Calculate strike price based on protection level
+    strike_price = self._calculate_protective_put_strike(
+        price_paths, current_price, params, summary_results
+    )
+    
+    put_hedge = OptionsHedge(
+        ticker=ticker,
+        option_type="PUT",
+        strike_price=strike_price,
+        current_price=current_price,
+        notional=notional,
+        contract_size=self._config.DEFAULT_OPTION_CONTRACT_SIZE,
+        expiry_years=tenor,
+        target_delta=self._config.DEFAULT_TARGET_PUT_DELTA,
+    )
+    recommendations.append(put_hedge.to_dict())
+    
+    return recommendations
+```
+
+#### **3.4 Protective Put Strike Calculation** (`trs_pricer/hedging/hedging_engine.py`)
+
+**Implement `_calculate_protective_put_strike()`:**
+```python
+def _calculate_protective_put_strike(
+    self,
+    price_paths: np.ndarray,
+    current_price: float,
+    params: Dict[str, Any],
+    summary_results: Dict[str, Any],
+) -> float:
+    """Calculate protective put strike price based on simulation results."""
+    if price_paths.size > 0:
+        final_prices = price_paths[:, -1]  # Last period prices
+        protection_level = self._config.DEFAULT_PROTECTION_LEVEL
+        percentile_price = np.percentile(final_prices, (1 - protection_level) * 100)
+        
+        # Use the lower of percentile-based or percentage-based strike
+        percentage_strike = current_price * self._config.DEFAULT_PUT_STRIKE_PERCENTAGE
+        return min(percentile_price, percentage_strike)
+    
+    # Fallback: Use default percentage
+    return current_price * self._config.DEFAULT_PUT_STRIKE_PERCENTAGE
+```
+
+#### **3.5 Net Effect Description** (`trs_pricer/hedging/hedging_engine.py`)
+
+**Implement `_describe_net_effect()`:**
+```python
+def _describe_net_effect(
+    self,
+    desk_position: str,
+    recommended_strategy: List[Dict[str, Any]],
+    combined_hedge_cost: float,
+) -> str:
+    """Generate description of net effect after hedging."""
+    if desk_position == "payer":
+        return (
+            f"Long futures position offsets short equity exposure. "
+            f"Net effect: Neutralized delta risk with minimal cost (futures margin only)."
+        )
+    else:  # receiver
+        irs_present = any(h.get("type") == "INTEREST RATE SWAP" for h in recommended_strategy)
+        puts_present = any("PUT" in h.get("type", "") for h in recommended_strategy)
+        
+        effects = []
+        if irs_present:
+            effects.append("converts floating rate liability to fixed rate")
+        if puts_present:
+            effects.append("caps downside risk while retaining upside")
+        
+        net_effect = "Net effect: " + " and ".join(effects) if effects else "Net effect: Risk mitigated"
+        if combined_hedge_cost > 0:
+            net_effect += f" with estimated hedge cost of ${combined_hedge_cost:,.0f}"
+        
+        return net_effect
+```
+
+#### **3.6 Main Recommendation Generator** (`trs_pricer/hedging/hedging_engine.py`)
+
+**Implement `generate_hedging_recommendation()`:**
+```python
+def generate_hedging_recommendation(
+    self,
+    desk_position: str,
+    summary_results: Dict[str, Any],
+    cash_flows_list: List[pd.DataFrame],
+    price_paths: np.ndarray,
+    params: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Generate hedging recommendations based on desk position and risk exposures."""
+    desk_position = desk_position.lower().strip()
+    if desk_position not in ["payer", "receiver"]:
+        raise ValueError(f"desk_position must be 'payer' or 'receiver', got '{desk_position}'")
+    
+    # Calculate risk exposures
+    delta_exposure = self._val.calculate_delta_exposure(cash_flows_list, price_paths, params)
+    funding_rate_exposure = self._val.calculate_funding_rate_exposure(cash_flows_list, params)
+    
+    # Identify primary risks
+    primary_risks = self._identify_primary_risks(desk_position, delta_exposure, funding_rate_exposure)
+    
+    # Generate hedge recommendations based on position
+    if desk_position == "payer":
+        recommended_strategy = self._recommend_payer_hedge(params, price_paths, delta_exposure)
+    else:  # receiver
+        recommended_strategy = self._recommend_receiver_hedge(
+        params, price_paths, delta_exposure, funding_rate_exposure, summary_results
+    )
+    
+    # Calculate combined hedge cost
+    combined_hedge_cost = sum(
+        hedge.get("estimated_premium", 0.0) or hedge.get("estimated_cost", 0.0)
+        for hedge in recommended_strategy
+    )
+    
+    # Generate net effect description
+    net_effect = self._describe_net_effect(desk_position, recommended_strategy, combined_hedge_cost)
+    
+    return {
+        "desk_position": desk_position.upper(),
+        "primary_risks": primary_risks,
+        "delta_exposure": delta_exposure,
+        "funding_rate_exposure": funding_rate_exposure,
+        "recommended_strategy": recommended_strategy,
+        "combined_hedge_cost": combined_hedge_cost,
+        "net_effect": net_effect,
+    }
+```
+
+---
+
+### **Step 4: Integrate Hedging into TRSPricer**
+
+#### **4.1 Update `run_simulation()`** (`trs_pricer/core/trs_pricer.py`)
+
+**Replace the TODO in `run_simulation()`:**
+```python
+# Step 7: Generate hedging recommendations (if desk_position is provided)
+hedging_recommendation = None
+if "desk_position" in resolved_params:
+    try:
+        hedging_recommendation = self._hedge.generate_hedging_recommendation(
+            desk_position=resolved_params["desk_position"],
+            summary_results=summary_results,
+            cash_flows_list=cash_flows_list,
+            price_paths=price_paths,
+            params=resolved_params,
+        )
+        summary_results["hedging_recommendation"] = hedging_recommendation
+    except Exception as e:
+        # Log error but don't fail the simulation
+        print(f"Warning: Could not generate hedging recommendations: {e}")
+```
+
+#### **4.2 Update `generate_summary_report()`** (`trs_pricer/core/trs_pricer.py`)
+
+**Replace the TODO in `generate_summary_report()`:**
+```python
+# Hedging Recommendation section (if available)
+if "hedging_recommendation" in summary_results:
+    hedging = summary_results["hedging_recommendation"]
+    lines.append("-" * 40)
+    lines.append("Hedging Recommendation (Desk's Perspective):")
+    lines.append(f"  Desk Role: Total Return {hedging['desk_position']}")
+    lines.append(f"  Primary Risk: {', '.join(hedging['primary_risks'])}")
+    lines.append("  Recommended Strategy:")
+    
+    for idx, strategy in enumerate(hedging["recommended_strategy"], 1):
+        strategy_type = strategy.get("type", "UNKNOWN")
+        if strategy_type == "INTEREST RATE SWAP":
+            lines.append(f"    {idx}. {strategy_type}: {strategy.get('position', '')}")
+            lines.append(f"       • Notional: ${strategy.get('notional', 0):,.0f} | Tenor: {strategy.get('tenor', 0)} Years")
+            lines.append(f"       • Fixed Rate: {strategy.get('fixed_rate', 0)*100:.2f}% | Floating: {strategy.get('floating_rate_index', 'N/A')}")
+            lines.append(f"       • Objective: {strategy.get('objective', 'N/A')}")
+        elif "OPTIONS" in strategy_type:
+            lines.append(f"    {idx}. {strategy_type}: {strategy.get('position', '')}")
+            lines.append(f"       • Strike: ${strategy.get('strike_price', 0):.2f} ({strategy.get('moneyness', 'N/A')})")
+            lines.append(f"       • Quantity: {strategy.get('num_contracts', 0)} Contracts | Estimated Premium: ${strategy.get('estimated_premium', 0):,.0f}")
+            lines.append(f"       • Objective: {strategy.get('objective', 'N/A')}")
+        elif "FUTURES" in strategy_type:
+            lines.append(f"    {idx}. {strategy_type}: {strategy.get('position', '')}")
+            lines.append(f"       • Quantity: {strategy.get('num_contracts', 0)} Contracts | Hedge Notional: ${strategy.get('hedge_notional', 0):,.0f}")
+            lines.append(f"       • Objective: {strategy.get('objective', 'N/A')}")
+    
+    combined_cost = hedging.get("combined_hedge_cost", 0.0)
+    if combined_cost > 0:
+        lines.append(f"  Combined Hedge Cost (Premium): ~${combined_cost:,.0f}")
+    lines.append(f"  Net Effect: {hedging.get('net_effect', 'N/A')}")
+```
+
+---
+
+### **Step 5: Implement Visualization**
+
+#### **5.1 Hedge Strategy Plot** (`trs_pricer/visualization/visualization.py`)
+
+**Implement `plot_hedge_strategy()`:**
+```python
+def plot_hedge_strategy(
+    self,
+    hedging_recommendation: Dict,
+    price_paths: np.ndarray,
+    params: Dict,
+) -> plt.Figure:
+    """Plot hedge strategy visualization showing hedged vs unhedged portfolio payoff."""
+    fig, ax = self._create_figure()
+    
+    # Extract key information
+    desk_position = hedging_recommendation.get("desk_position", "RECEIVER")
+    strategies = hedging_recommendation.get("recommended_strategy", [])
+    
+    if not strategies or price_paths.size == 0:
+        ax.text(0.5, 0.5, 'No hedge strategy data available', 
+                transform=ax.transAxes, ha='center', va='center')
+        return fig
+    
+    # Plot final price distribution
+    final_prices = price_paths[:, -1]
+    initial_price = price_paths[0, 0]
+    
+    # Create histogram of final prices
+    ax.hist(final_prices, bins=50, alpha=0.5, label='Final Price Distribution', 
+            color='blue', edgecolor='black')
+    ax.axvline(initial_price, color='green', linestyle='--', linewidth=2, 
+               label=f'Initial Price: ${initial_price:.2f}')
+    
+    # Mark hedge strikes if puts are present
+    for strategy in strategies:
+        if "PUT" in strategy.get("type", ""):
+            strike = strategy.get("strike_price", initial_price)
+            ax.axvline(strike, color='red', linestyle='--', linewidth=2, 
+                     label=f'Put Strike: ${strike:.2f}')
+    
+    ax.set_xlabel("Final Stock Price ($)")
+    ax.set_ylabel("Frequency")
+    ax.set_title(f"Hedge Strategy Visualization\nDesk Position: {desk_position}")
+    ax.legend()
+    plt.tight_layout()
+    
+    return fig
+```
+
+**Update `run_simulation()` to include the plot:**
+```python
+# Plot hedge strategy (if hedging recommendation available)
+if hedging_recommendation:
+    try:
+        fig5 = self._viz.plot_hedge_strategy(
+            hedging_recommendation, price_paths, resolved_params
+        )
+        figures.append(fig5)
+    except Exception as e:
+        print(f"Warning: Could not generate hedge strategy plot: {e}")
+```
+
+---
+
+### **Step 6: Testing**
+
+#### **6.1 Test Payer Position**
+
+Create a test script:
+```python
+from trs_pricer import TRSPricer
+
+params = {
+    "ticker": "AAPL",
+    "notional": 10_000_000,
+    "tenor": 1,
+    "payment_frequency": 4,
+    "num_simulations": 1000,
+    "desk_position": "payer",  # Test payer hedge
+}
+
+pricer = TRSPricer()
+summary_results, figs = pricer.run_simulation(params)
+report = pricer.generate_summary_report(summary_results)
+print(report)
+```
+
+#### **6.2 Test Receiver Position**
+
+```python
+params = {
+    "ticker": "MSFT",
+    "notional": 5_000_000,
+    "tenor": 2,
+    "payment_frequency": 4,
+    "num_simulations": 5000,
+    "desk_position": "receiver",  # Test receiver hedge
+}
+
+pricer = TRSPricer()
+summary_results, figs = pricer.run_simulation(params)
+report = pricer.generate_summary_report(summary_results)
+print(report)
+```
+
+---
+
+### **Step 7: Verification Checklist**
+
+- [ ] All instrument models (`FuturesHedge`, `InterestRateSwapHedge`, `OptionsHedge`) implement `__post_init__()` and `to_dict()`
+- [ ] `ValuationEngine` implements `calculate_delta_exposure()` and `calculate_funding_rate_exposure()`
+- [ ] `HedgingEngine` implements all helper methods and `generate_hedging_recommendation()`
+- [ ] `TRSPricer.run_simulation()` integrates hedging recommendations
+- [ ] `TRSPricer.generate_summary_report()` displays hedging recommendations
+- [ ] `TRSVisualizer.plot_hedge_strategy()` creates visualization
+- [ ] Test with both `desk_position="payer"` and `desk_position="receiver"`
+- [ ] Verify output matches expected format from Section 3
+
+---
+
+**Implementation Order Recommendation:**
+1. Start with instrument models (Step 1) - they're independent and testable
+2. Implement valuation exposure methods (Step 2) - needed by hedging engine
+3. Build hedging engine methods incrementally (Step 3) - test each method as you go
+4. Integrate into TRSPricer (Step 4) - connects everything together
+5. Add visualization (Step 5) - final polish
+6. Test thoroughly (Step 6) - verify end-to-end functionality

@@ -72,7 +72,29 @@ class MarketDataFetcher:
         try:
             stock = self._get_ticker(ticker)
             info = stock.info
-            y = self._first_float(info, ("dividendYield", "trailingAnnualDividendYield", "yield"))
+            # Prioritize trailingAnnualDividendYield (more reliable), then check dividendYield with normalization
+            y = None
+            trailing = info.get("trailingAnnualDividendYield")
+            if trailing is not None:
+                try:
+                    y = float(trailing)
+                    if y >= 0:
+                        return y
+                except (TypeError, ValueError):
+                    pass
+            # Fallback to dividendYield with normalization if > 1
+            div_yield = info.get("dividendYield")
+            if div_yield is not None:
+                try:
+                    y = float(div_yield)
+                    if y >= 0:
+                        if y > 1:
+                            y = y / 100.0
+                        return y
+                except (TypeError, ValueError):
+                    pass
+            # Final fallback to yield field
+            y = self._first_float(info, ("yield",), min_val=0)
             if y is not None and y >= 0:
                 return y
             dividends = stock.dividends
@@ -89,7 +111,9 @@ class MarketDataFetcher:
             return DEFAULT_DIVIDEND_YIELD
     
     def _volatility_from_option_chain(self, ticker: str, stock: yf.Ticker) -> Optional[float]:
-        """ATM implied vol from nearest expiry option chain, or None."""
+        """ATM implied vol from nearest expiry option chain, or None.
+        Normalizes IV: raw may be decimal (0.25), percentage (25), or bps (2500).
+        """
         try:
             expiries = getattr(stock, "options", None) or []
             if not expiries:
@@ -106,8 +130,16 @@ class MarketDataFetcher:
             if not parts:
                 return None
             combined = pd.concat(parts, ignore_index=True).dropna(subset=["impliedVolatility"])
-            iv = combined.sort_values("moneyness").head(10)["impliedVolatility"].replace(0, np.nan).dropna()
-            return None if iv.empty else float(iv.mean())
+            iv_series = combined.sort_values("moneyness").head(10)["impliedVolatility"].replace(0, np.nan).dropna()
+            if iv_series.empty:
+                return None
+            raw_mean = float(iv_series.mean())
+            # Normalize: bps (>100) -> /10000; percentage (1,100] -> /100; decimal (0,1] -> as-is
+            if raw_mean > 100:
+                raw_mean = raw_mean / 10000.0
+            elif raw_mean > 1:
+                raw_mean = raw_mean / 100.0
+            return raw_mean
         except Exception:
             return None
     
@@ -121,11 +153,21 @@ class MarketDataFetcher:
             v = self._first_float(info, ("impliedVolatility", "volatility", "52WeekVolatility"), min_val=0)
             if v is not None:
                 return v / 100.0 if v > 1 else v
-            iv = self._volatility_from_option_chain(ticker, stock)
-            if iv is not None and iv > 0:
-                return iv
+            # Prefer historical volatility over option chain IV for stability
             period_days = int(lookback_days * 1.5)
             hist = stock.history(period=f"{period_days}d")
+            hist_vol = None
+            if not hist.empty and len(hist) >= 2:
+                closes = hist["Close"]
+                log_returns = np.log(closes / closes.shift(1)).dropna().tail(lookback_days)
+                if len(log_returns) >= 10:
+                    hist_vol = float(log_returns.std() * np.sqrt(TRADING_DAYS_PER_YEAR))
+            iv = self._volatility_from_option_chain(ticker, stock)
+            if hist_vol is not None and hist_vol > 0:
+                return hist_vol
+            if iv is not None and iv > 0:
+                return iv
+            # Final fallback: historical calculation
             if hist.empty or len(hist) < 2:
                 warnings.warn(f"Insufficient price data for {ticker}, using default volatility")
                 return DEFAULT_VOLATILITY

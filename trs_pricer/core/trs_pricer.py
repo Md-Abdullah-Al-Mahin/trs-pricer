@@ -165,13 +165,25 @@ class TRSPricer:
         
         # Step 4: Calculate NPV for each path
         npv_list = []
-        for cash_flows_df in cash_flows_list:
+        # #region agent log
+        import json
+        with open('/Users/mdabdullahalmahin/Desktop/Projects/trs-pricer/.cursor/debug.log', 'a') as f:
+            f.write(json.dumps({"sessionId":"debug-session","runId":"post-fix","hypothesisId":"E","location":"trs_pricer.py:166","message":"Starting NPV calculation for all paths","data":{"num_paths":len(cash_flows_list),"benchmark_rate":resolved_params["benchmark_rate"],"effective_funding_rate":resolved_params["effective_funding_rate"],"dividend_yield":resolved_params["dividend_yield"]},"timestamp":int(__import__('time').time()*1000)})+'\n')
+        # #endregion
+        for path_idx, cash_flows_df in enumerate(cash_flows_list):
             npv = self._val.calculate_npv(
                 cash_flows_df["net_cash_flow"],
                 resolved_params["benchmark_rate"],
                 resolved_params["payment_frequency"],
             )
             npv_list.append(npv)
+            # #region agent log
+            if path_idx < 5:  # Log first 5 paths for analysis
+                with open('/Users/mdabdullahalmahin/Desktop/Projects/trs-pricer/.cursor/debug.log', 'a') as f:
+                    mean_net_flow = float(cash_flows_df["net_cash_flow"].mean())
+                    sum_net_flow = float(cash_flows_df["net_cash_flow"].sum())
+                    f.write(json.dumps({"sessionId":"debug-session","runId":"post-fix","hypothesisId":"E","location":"trs_pricer.py:175","message":"Path NPV result","data":{"path_idx":path_idx,"npv":npv,"mean_periodic_net_flow":mean_net_flow,"sum_undiscounted_flows":sum_net_flow},"timestamp":int(__import__('time').time()*1000)})+'\n')
+            # #endregion
         
         # Step 5: Calculate exposure metrics (EPE profile)
         epe_profile, epe_dates = self._val.calculate_exposure_metrics(cash_flows_list, resolved_params)
@@ -280,6 +292,15 @@ class TRSPricer:
         lines.append(f"  50th Percentile NPV: ${percentiles['50th']:,.0f}")
         lines.append(f"  75th Percentile NPV: ${percentiles['75th']:,.0f}")
         lines.append(f"  95th Percentile NPV: ${percentiles['95th']:,.0f}")
+        lines.append("-" * 40)
+        
+        # Total Cash Flows section
+        lines.append("Total Cash Flows (Undiscounted, Mean Across Simulations):")
+        total_return_leg = summary_results.get('total_return_leg_total', 0.0)
+        funding_leg = summary_results.get('funding_leg_total', 0.0)
+        lines.append(f"  Total Return Leg (Desk → Client): ${total_return_leg:,.0f}")
+        lines.append(f"  Funding Leg (Client → Desk): ${funding_leg:,.0f}")
+        lines.append(f"  Net Cash Flow (Undiscounted): ${funding_leg - total_return_leg:,.0f}")
         lines.append("-" * 40)
         
         # Risk Metrics section

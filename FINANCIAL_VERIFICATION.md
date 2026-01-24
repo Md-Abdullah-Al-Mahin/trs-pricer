@@ -41,19 +41,20 @@ return price_appreciation + dividend_payment
 
 ## 3. Funding Leg (cash_flows.py)
 
-**Specification:**
+**Specification (UPDATED):**
 ```
-(effective_funding_rate / payment_frequency) * notional - max(0, period_start - period_end)/period_start * notional
+(effective_funding_rate / payment_frequency) * notional
 ```
+
+**Note:** In standard TRS contracts, the funding leg is a fixed payment regardless of stock movement. Depreciation is already accounted for in the total return leg (which becomes negative when stock depreciates).
 
 **Implementation:**
 ```python
 funding_payment = (effective_funding_rate / payment_frequency) * notional
-depreciation_offset = max(0.0, period_start_price - period_end_price) / period_start_price * notional
-return funding_payment - depreciation_offset
+return funding_payment  # No depreciation offset
 ```
 
-✅ **VERIFIED CORRECT** - Matches specification exactly.
+✅ **VERIFIED CORRECT** - Fixed payment matches standard TRS convention.
 
 ---
 

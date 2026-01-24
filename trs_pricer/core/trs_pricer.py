@@ -8,12 +8,13 @@ from typing import Dict, Tuple, List, Any, Optional, Callable
 import matplotlib.pyplot as plt
 import numpy as np
 
-from config import DEFAULT_BENCHMARK_RATE
-from market_data import MarketDataFetcher
-from simulation import SimulationEngine
-from cash_flows import CashFlowEngine
-from valuation import ValuationEngine
-from visualization import TRSVisualizer
+from trs_pricer.config import DEFAULT_BENCHMARK_RATE
+from trs_pricer.core.market_data import MarketDataFetcher
+from trs_pricer.core.simulation import SimulationEngine
+from trs_pricer.core.cash_flows import CashFlowEngine
+from trs_pricer.core.valuation import ValuationEngine
+from trs_pricer.visualization.visualization import TRSVisualizer
+from trs_pricer.hedging.hedging_engine import HedgingEngine
 
 
 class TRSPricer:
@@ -26,12 +27,14 @@ class TRSPricer:
         cash_flow_engine: Optional[CashFlowEngine] = None,
         valuation_engine: Optional[ValuationEngine] = None,
         visualizer: Optional[TRSVisualizer] = None,
+        hedging_engine: Optional[HedgingEngine] = None,
     ):
         self._market = market_data_fetcher or MarketDataFetcher(enable_cache=True)
         self._sim = simulation_engine or SimulationEngine()
         self._cf = cash_flow_engine or CashFlowEngine()
         self._val = valuation_engine or ValuationEngine()
         self._viz = visualizer or TRSVisualizer()
+        self._hedge = hedging_engine or HedgingEngine(valuation_engine=self._val)
 
     def _validate_positive(self, value: Any, name: str) -> float:
         """Validate and convert to positive float."""
@@ -69,8 +72,8 @@ class TRSPricer:
         
         Args:
             params: Dictionary with user-provided parameters. Required: ticker, notional,
-                    tenor, payment_frequency, num_simulations. Optional overrides:
-                    initial_price, dividend_yield, volatility, funding_spread, benchmark_rate.
+                    tenor, payment_frequency, num_simulations. Optional: desk_position ("payer" or "receiver").
+                    Optional overrides: initial_price, dividend_yield, volatility, funding_spread, benchmark_rate.
         
         Returns:
             Dictionary with all resolved parameters including auto-fetched market data.
@@ -83,6 +86,11 @@ class TRSPricer:
         missing = [p for p in required if p not in params]
         if missing:
             raise ValueError(f"Missing required parameters: {', '.join(missing)}")
+        
+        # Validate desk_position if provided (for hedging module)
+        desk_position = params.get("desk_position", "receiver")  # Default to receiver
+        if desk_position not in ["payer", "receiver"]:
+            raise ValueError(f"desk_position must be 'payer' or 'receiver', got '{desk_position}'")
 
         ticker = str(params["ticker"]).upper().strip()
         if not ticker:
@@ -123,6 +131,7 @@ class TRSPricer:
             "funding_spread": funding_spread,
             "benchmark_rate": benchmark_rate,
             "effective_funding_rate": benchmark_rate + funding_spread,
+            "desk_position": desk_position,  # For hedging module
         }
 
     def run_simulation(self, params: Dict[str, Any]) -> Tuple[Dict[str, Any], List[plt.Figure]]:
@@ -189,7 +198,15 @@ class TRSPricer:
             "peak_epe_period": int(np.argmax(epe_profile)) + 1 if len(epe_profile) > 0 else 0,
         })
         
-        # Step 7: Generate all plots
+        # Step 7: Generate hedging recommendations (if desk_position is provided)
+        hedging_recommendation = None
+        if "desk_position" in resolved_params:
+            # TODO: Implement hedging recommendation generation
+            # hedging_recommendation = self._hedge.generate_hedging_recommendation(...)
+            # summary_results["hedging_recommendation"] = hedging_recommendation
+            pass
+        
+        # Step 8: Generate all plots
         figures = []
         
         # Plot simulated price paths
@@ -212,6 +229,13 @@ class TRSPricer:
         # Plot cash flow analysis
         fig4 = self._viz.plot_cash_flow_analysis(cash_flows_list, num_simulations_to_plot=10)
         figures.append(fig4)
+        
+        # Plot hedge strategy (if hedging recommendation available)
+        if hedging_recommendation:
+            # TODO: Implement hedge strategy plotting
+            # fig5 = self._viz.plot_hedge_strategy(hedging_recommendation, price_paths, resolved_params)
+            # figures.append(fig5)
+            pass
         
         return summary_results, figures
 
@@ -276,5 +300,12 @@ class TRSPricer:
         lines.append(f"Simulation Details:")
         lines.append(f"  Number of Simulations: {summary_results.get('num_simulations', 0):,}")
         lines.append(f"  Payment Frequency: {payment_frequency} per year")
+        
+        # Hedging Recommendation section (if available)
+        if "hedging_recommendation" in summary_results:
+            # TODO: Implement hedging recommendation report formatting
+            lines.append("-" * 40)
+            lines.append("Hedging Recommendation (Desk's Perspective):")
+            lines.append("  [Hedging recommendation details to be implemented]")
         
         return "\n".join(lines)

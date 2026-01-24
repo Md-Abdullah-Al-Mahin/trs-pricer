@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 
-from config import (
+from trs_pricer.config import (
     DEFAULT_DIVIDEND_YIELD,
     DEFAULT_FUNDING_SPREAD,
     DEFAULT_LOOKBACK_DAYS,

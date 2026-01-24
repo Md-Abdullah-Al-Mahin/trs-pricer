@@ -1,10 +1,24 @@
 """
 Main Entry Point
-Example usage and execution of TRS pricing simulator
+Example usage and execution of TRS pricing simulator.
+
+By default, running this script launches the Streamlit UI.
+Use --cli to run the console simulation instead.
 """
+
+import argparse
+import subprocess
+import sys
+from pathlib import Path
 
 from trs_pricer import TRSPricer
 import matplotlib.pyplot as plt
+
+
+def run_ui():
+    """Launch the Streamlit web UI."""
+    app_path = Path(__file__).resolve().parent / "streamlit_app.py"
+    subprocess.run([sys.executable, "-m", "streamlit", "run", str(app_path)])
 
 
 def main():
@@ -69,4 +83,15 @@ def main_manual():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="TRS Pricing Simulator")
+    parser.add_argument(
+        "--cli",
+        action="store_true",
+        help="Run console simulation instead of launching the Streamlit UI",
+    )
+    args = parser.parse_args()
+
+    if args.cli:
+        main()
+    else:
+        run_ui()

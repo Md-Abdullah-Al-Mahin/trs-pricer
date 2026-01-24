@@ -101,3 +101,46 @@ class ValuationEngine:
             "npv_percentiles": {f"{p}th": float(np.percentile(npv_array, p)) for p in percentiles},
             "mean_periodic_net_cash_flows": mean_periodic_flows,
         }
+    
+    def calculate_delta_exposure(
+        self,
+        cash_flows_list: List[pd.DataFrame],
+        price_paths: np.ndarray,
+        params: Dict,
+    ) -> float:
+        """
+        Calculate approximate delta exposure: sensitivity of TRS NPV to changes in underlying stock price.
+        
+        Uses finite difference approximation: delta ≈ (NPV_up - NPV_down) / (2 * price_shock)
+        where NPV_up/down are NPVs calculated with shocked prices.
+        
+        Args:
+            cash_flows_list: List of cash flow DataFrames (from original simulation)
+            price_paths: Original simulated price paths
+            params: Dictionary with benchmark_rate, payment_frequency, notional, etc.
+        
+        Returns:
+            Estimated delta exposure (dNPV/dPrice)
+        """
+        # TODO: Implement delta calculation using finite difference or analytical approximation
+        raise NotImplementedError
+    
+    def calculate_funding_rate_exposure(
+        self,
+        cash_flows_list: List[pd.DataFrame],
+        params: Dict,
+    ) -> float:
+        """
+        Calculate funding rate exposure: present value of the floating funding leg.
+        
+        This isolates the interest rate risk component of the TRS.
+        
+        Args:
+            cash_flows_list: List of cash flow DataFrames
+            params: Dictionary with benchmark_rate, payment_frequency, notional, effective_funding_rate
+        
+        Returns:
+            Present value of funding leg (positive = liability, negative = asset)
+        """
+        # TODO: Implement funding rate exposure calculation
+        raise NotImplementedError

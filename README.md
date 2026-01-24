@@ -458,3 +458,91 @@ for fig in figs:
 - Close other applications to free up memory
 
 ---
+Here is a project extension outline detailing the plan to add hedging recommendation logic to your TRS Pricing Simulator, structured for your README.md.
+
+---
+
+## **Project Extension: Hedging Recommendation Module**
+
+### **1. Extension Overview**
+This module adds intelligent hedging recommendations to the TRS simulator. It analyzes the simulated risk exposures from the desk's perspective (whether it is the **Total Return Payer** or **Receiver**) and recommends appropriate financial instruments to mitigate market risk.
+
+trs-pricer/
+├── hedging_engine.py          # NEW: Advanced hedging logic
+├── instruments/               # NEW: Instrument models
+│   ├── futures_model.py
+│   ├── swap_model.py
+│   └── options_model.py
+├── config.py                  # Updated with hedging parameters
+└── Existing files (unchanged)
+
+**Core Objective**: Transform the simulator from a pricing/risk engine into a decision-support tool that answers: "Given this TRS trade, how should the desk hedge its market exposure?"
+
+---
+
+### **2. Implementation Plan: Phases & Steps**
+
+#### **Phase 1: Foundation & Parameter Expansion**
+*Goal: Extend the core system to support hedging decisions.*
+
+1.  **Define the Desk's Position Parameter**: Add a mandatory `desk_position` parameter (values: `"payer"` or `"receiver"`) to determine the hedge direction.
+2.  **Enhance Risk Exposure Metrics**: Modify the `ValuationEngine` to calculate additional metrics crucial for hedging:
+    *   **Delta Exposure**: Approximate sensitivity of the TRS NPV to changes in the underlying stock price.
+    *   **Funding Rate Exposure**: Isolate the present value of the floating funding leg for interest rate risk.
+3.  **Extend Configuration**: Add a new `HedgingConfig` class within `config.py` to store constants (e.g., target option deltas, futures contract sizes, default hedge ratios).
+
+#### **Phase 2: Core Hedging Logic & Instrument Selection**
+*Goal: Implement the decision engine that maps desk positions to hedging strategies.*
+
+1.  **Create the `HedgingEngine` Class**: This will be the central orchestrator for all hedging logic.
+2.  **Implement the Primary Decision Matrix**:
+    | Desk Position | Economic Risk | Recommended Hedge Action |
+    | :--- | :--- | :--- |
+    | **Total Return Payer**<br>(Pays asset return) | **Short the Asset** | **Long Equity Futures**<br>Directly offsets delta exposure from being short the stock's performance. |
+    | **Total Return Receiver**<br>(Receives asset return) | **Long the Asset**<br>**Short the Floating Rate** | **1. Receive-Floating IRS**<br>Hedges the liability of paying the floating funding rate (e.g., SOFR + spread).<br>**2. Long Put Options**<br>Protects against depreciation of the long asset position while retaining upside. |
+3.  **Develop Hedge Calculation Methods**:
+    *   `_calculate_futures_hedge()`: Calculates the optimal number of futures contracts based on notional, price, and target hedge ratio.
+    *   `_calculate_irs_hedge()`: Specifies an IRS to receive floating/pay fixed, matching the TRS tenor and notional.
+    *   `_calculate_put_hedge()`: Determines put option specifications (strike, expiry, quantity) based on desired protection level (e.g., 95% Value-at-Risk).
+
+#### **Phase 3: Advanced Features & Integration**
+*Goal: Refine recommendations and connect them to the existing simulator workflow.*
+
+1.  **Incorporate Simulation Insights**: Use the Monte Carlo results (e.g., distribution of final prices, path volatility) to calibrate hedge sizes and strike prices dynamically, moving beyond static rules.
+2.  **Integrate with `TRSPricer.run_simulation`**: Modify the main orchestration method to:
+    a. Pass all simulated data (price paths, cash flows, NPV list) to the `HedgingEngine`.
+    b. Append the hedging recommendation dictionary to the `summary_results`.
+3.  **Extend Reporting & Visualization**:
+    *   Update `TRSPricer.generate_summary_report()` to display the hedge recommendation clearly.
+    *   Add a new plotting method in `TRSVisualizer` (e.g., `plot_hedge_strategy`) to visualize the payoff of the hedged portfolio versus the unhedged TRS.
+
+#### **Phase 4: Validation & Documentation**
+*Goal: Ensure correctness and update project guides.*
+
+1.  **Create Validation Tests**: Develop unit tests for the `HedgingEngine` logic using known scenarios (e.g., "For a payer position with a 10M notional on AAPL, expect a long futures recommendation of X contracts").
+2.  **Update `main.py` Examples**: Include clear examples in the main script demonstrating both `desk_position="payer"` and `desk_position="receiver"` scenarios.
+3.  **Update README.md**: Integrate this plan and the new module's API into the main project documentation.
+
+---
+
+### **3. Expected Output Enhancement**
+
+After implementation, the console output from `generate_summary_report` will include a new section:
+
+```
+----------------------------------------
+Hedging Recommendation (Desk's Perspective):
+  Desk Role: Total Return RECEIVER
+  Primary Risk: Long Equity, Short Floating Rate
+  Recommended Strategy:
+    1. INTEREST RATE SWAP: Receive SOFR, Pay Fixed @ 5.15%
+       • Notional: $5,000,000 | Tenor: 2 Years
+       • Objective: Hedge floating rate payment liability.
+    2. EQUITY PUT OPTIONS: Long Put, Strike @ $380.00 (90% of spot)
+       • Quantity: 132 Contracts | Estimated Premium: $42,000
+       • Objective: Protect against underlying depreciation below $380.
+  Combined Hedge Cost (Premium): ~$42,000
+  Net Effect: Converts position to a ~5% fixed funding cost with capped downside.
+```
+
+This extension adds significant practical value by closing the loop between risk measurement and risk management, making your simulator a comprehensive tool for understanding TRS economics.

@@ -30,18 +30,18 @@ class InterestRateSwapHedge:
     
     def __post_init__(self):
         """Validate parameters after initialization."""
-        # TODO: Implement parameter validation
-        raise NotImplementedError
-    
+        if self.notional <= 0:
+            raise ValueError("notional must be positive")
+        if self.payment_frequency <= 0:
+            raise ValueError("payment_frequency must be positive")
+
     def calculate_annual_payment(self) -> float:
         """Calculate annual fixed payment amount."""
-        # TODO: Implement annual payment calculation
-        raise NotImplementedError
-    
+        return self.notional * self.fixed_rate
+
     def calculate_periodic_payment(self) -> float:
         """Calculate periodic (e.g., quarterly) fixed payment amount."""
-        # TODO: Implement periodic payment calculation
-        raise NotImplementedError
+        return self.calculate_annual_payment() / self.payment_frequency
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for reporting."""

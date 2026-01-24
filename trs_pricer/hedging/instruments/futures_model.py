@@ -32,8 +32,17 @@ class FuturesHedge:
     
     def __post_init__(self):
         """Calculate number of contracts and hedge notional after initialization."""
-        # TODO: Implement contract calculation logic
-        raise NotImplementedError
+        if self.current_price <= 0:
+            raise ValueError("current_price must be positive")
+        if self.contract_size <= 0:
+            raise ValueError("contract_size must be positive")
+
+        # Calculate number of contracts needed
+        shares_to_hedge = (self.notional * self.target_hedge_ratio) / self.current_price
+        self.num_contracts = int(round(shares_to_hedge / self.contract_size))
+
+        # Effective hedge notional
+        self.hedge_notional = self.num_contracts * self.contract_size * self.current_price
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for reporting."""

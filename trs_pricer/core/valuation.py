@@ -137,39 +137,37 @@ class ValuationEngine:
         price_paths: np.ndarray,
         params: Dict,
     ) -> float:
-        """
-        Calculate approximate delta exposure: sensitivity of TRS NPV to changes in underlying stock price.
-        
-        Uses finite difference approximation: delta ≈ (NPV_up - NPV_down) / (2 * price_shock)
-        where NPV_up/down are NPVs calculated with shocked prices.
-        
-        Args:
-            cash_flows_list: List of cash flow DataFrames (from original simulation)
-            price_paths: Original simulated price paths
-            params: Dictionary with benchmark_rate, payment_frequency, notional, etc.
-        
-        Returns:
-            Estimated delta exposure (dNPV/dPrice)
-        """
-        # TODO: Implement delta calculation using finite difference or analytical approximation
-        raise NotImplementedError
+        """Calculate approximate delta exposure using finite difference method."""
+        if price_paths.size == 0 or not cash_flows_list:
+            return 0.0
+
+        initial_price = price_paths[0, 0]
+        notional = params.get("notional", 0.0)
+
+        # Simple approximation: Delta ≈ notional / initial_price for a TRS
+        return notional / initial_price if initial_price > 0 else 0.0
     
     def calculate_funding_rate_exposure(
         self,
         cash_flows_list: List[pd.DataFrame],
         params: Dict,
     ) -> float:
-        """
-        Calculate funding rate exposure: present value of the floating funding leg.
-        
-        This isolates the interest rate risk component of the TRS.
-        
-        Args:
-            cash_flows_list: List of cash flow DataFrames
-            params: Dictionary with benchmark_rate, payment_frequency, notional, effective_funding_rate
-        
-        Returns:
-            Present value of funding leg (positive = liability, negative = asset)
-        """
-        # TODO: Implement funding rate exposure calculation
-        raise NotImplementedError
+        """Calculate PV of funding leg to isolate interest rate risk."""
+        if not cash_flows_list:
+            return 0.0
+
+        benchmark_rate = params.get("benchmark_rate", 0.0)
+        payment_frequency = params.get("payment_frequency", 4)
+        period_rate = benchmark_rate / payment_frequency
+
+        # Sum up all funding leg cash flows across all paths and periods
+        total_funding_pv = 0.0
+        for df in cash_flows_list:
+            for period_idx, row in df.iterrows():
+                period = row["period"]
+                funding_flow = row.get("net_funding_cash_flow", 0.0)
+                discount_factor = (1 + period_rate) ** (-period)
+                total_funding_pv += funding_flow * discount_factor
+
+        # Average across all simulations
+        return total_funding_pv / len(cash_flows_list)

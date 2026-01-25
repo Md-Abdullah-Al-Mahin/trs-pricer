@@ -124,26 +124,3 @@ class TRSVisualizer:
         self._finalize_plot(ax, "Period", "Net Cash Flow ($)", 
                           f"Net Cash Flow Analysis (showing {num_simulations_to_plot} of {len(cash_flows_series)} paths)")
         return fig
-    
-    def plot_hedge_strategy(
-        self,
-        hedging_recommendation: Dict,
-        price_paths: np.ndarray,
-        params: Dict,
-    ) -> plt.Figure:
-        """
-        Plot hedge strategy visualization showing hedged vs unhedged portfolio payoff.
-        
-        Args:
-            hedging_recommendation: Dictionary from HedgingEngine.generate_hedging_recommendation
-            price_paths: Simulated price paths array
-            params: Dictionary with trade parameters
-        
-        Returns:
-            matplotlib Figure object
-        """
-        # TODO: Implement hedge strategy visualization
-        fig, ax = self._create_figure()
-        ax.text(0.5, 0.5, 'Hedge strategy plot to be implemented', 
-                transform=ax.transAxes, ha='center', va='center')
-        return fig

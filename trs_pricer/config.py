@@ -38,30 +38,3 @@ TRADING_DAYS_PER_YEAR = 252  # for annualization (e.g. sqrt(252) in vol)
 # Environment / API
 # -----------------------------------------------------------------------------
 FRED_API_KEY_ENV = "FRED_API_KEY"  # optional; also passable via params
-
-# -----------------------------------------------------------------------------
-# Hedging Configuration (Project Extension: Hedging Recommendation Module)
-# -----------------------------------------------------------------------------
-
-class HedgingConfig:
-    """Configuration constants for hedging recommendations."""
-    
-    # Option hedge parameters
-    DEFAULT_TARGET_PUT_DELTA = -0.20  # Target delta for protective puts (20% OTM)
-    DEFAULT_PUT_STRIKE_PERCENTAGE = 0.90  # Strike as % of spot (90% = 10% OTM)
-    DEFAULT_OPTION_CONTRACT_SIZE = 100  # Standard equity option contract size
-    
-    # Futures hedge parameters
-    DEFAULT_FUTURES_CONTRACT_SIZE = 100  # Standard equity futures contract size
-    DEFAULT_TARGET_HEDGE_RATIO = 1.0  # Full hedge (1.0 = 100% of notional)
-    
-    # Interest Rate Swap parameters
-    DEFAULT_IRS_FIXED_RATE_BUFFER = 0.0015  # 15 bps buffer above benchmark for fixed leg
-    
-    # Value-at-Risk parameters for dynamic hedging
-    DEFAULT_VAR_CONFIDENCE_LEVEL = 0.95  # 95% VaR
-    DEFAULT_PROTECTION_LEVEL = 0.90  # Protect against 90% of downside scenarios
-    
-    # Hedge cost estimation
-    DEFAULT_OPTION_PREMIUM_ESTIMATE = 0.05  # Rough estimate: 5% of notional for puts
-    DEFAULT_IRS_BID_ASK_SPREAD = 0.0005  # 5 bps bid-ask spread for IRS

@@ -14,7 +14,6 @@ from trs_pricer.core.simulation import SimulationEngine
 from trs_pricer.core.cash_flows import CashFlowEngine
 from trs_pricer.core.valuation import ValuationEngine
 from trs_pricer.visualization.visualization import TRSVisualizer
-from trs_pricer.hedging.hedging_engine import HedgingEngine
 
 
 class TRSPricer:
@@ -27,14 +26,12 @@ class TRSPricer:
         cash_flow_engine: Optional[CashFlowEngine] = None,
         valuation_engine: Optional[ValuationEngine] = None,
         visualizer: Optional[TRSVisualizer] = None,
-        hedging_engine: Optional[HedgingEngine] = None,
     ):
         self._market = market_data_fetcher or MarketDataFetcher(enable_cache=True)
         self._sim = simulation_engine or SimulationEngine()
         self._cf = cash_flow_engine or CashFlowEngine()
         self._val = valuation_engine or ValuationEngine()
         self._viz = visualizer or TRSVisualizer()
-        self._hedge = hedging_engine or HedgingEngine(valuation_engine=self._val)
 
     def _validate_positive(self, value: Any, name: str) -> float:
         """Validate and convert to positive float."""
@@ -72,7 +69,7 @@ class TRSPricer:
         
         Args:
             params: Dictionary with user-provided parameters. Required: ticker, notional,
-                    tenor, payment_frequency, num_simulations. Optional: desk_position ("payer" or "receiver").
+                    tenor, payment_frequency, num_simulations.
                     Optional overrides: initial_price, dividend_yield, volatility, funding_spread, benchmark_rate.
         
         Returns:
@@ -86,11 +83,6 @@ class TRSPricer:
         missing = [p for p in required if p not in params]
         if missing:
             raise ValueError(f"Missing required parameters: {', '.join(missing)}")
-        
-        # Validate desk_position if provided (for hedging module)
-        desk_position = params.get("desk_position", "receiver")  # Default to receiver
-        if desk_position not in ["payer", "receiver"]:
-            raise ValueError(f"desk_position must be 'payer' or 'receiver', got '{desk_position}'")
 
         ticker = str(params["ticker"]).upper().strip()
         if not ticker:
@@ -131,7 +123,6 @@ class TRSPricer:
             "funding_spread": funding_spread,
             "benchmark_rate": benchmark_rate,
             "effective_funding_rate": benchmark_rate + funding_spread,
-            "desk_position": desk_position,  # For hedging module
         }
 
     def run_simulation(self, params: Dict[str, Any]) -> Tuple[Dict[str, Any], List[plt.Figure]]:
@@ -210,22 +201,7 @@ class TRSPricer:
             "peak_epe_period": int(np.argmax(epe_profile)) + 1 if len(epe_profile) > 0 else 0,
         })
         
-        # Step 7: Generate hedging recommendations (if desk_position is provided)
-        hedging_recommendation = None
-        if "desk_position" in resolved_params:
-            try:
-                hedging_recommendation = self._hedge.generate_hedging_recommendation(
-                    desk_position=resolved_params["desk_position"],
-                    summary_results=summary_results,
-                    cash_flows_list=cash_flows_list,
-                    price_paths=price_paths,
-                    params=resolved_params,
-                )
-                summary_results["hedging_recommendation"] = hedging_recommendation
-            except Exception as e:
-                print(f"Warning: Could not generate hedging recommendations: {e}")
-        
-        # Step 8: Generate all plots
+        # Step 7: Generate all plots
         figures = []
         
         # Plot simulated price paths
@@ -248,13 +224,6 @@ class TRSPricer:
         # Plot cash flow analysis
         fig4 = self._viz.plot_cash_flow_analysis(cash_flows_list, num_simulations_to_plot=10)
         figures.append(fig4)
-        
-        # Plot hedge strategy (if hedging recommendation available)
-        if hedging_recommendation:
-            # TODO: Implement hedge strategy plotting
-            # fig5 = self._viz.plot_hedge_strategy(hedging_recommendation, price_paths, resolved_params)
-            # figures.append(fig5)
-            pass
         
         return summary_results, figures
 
@@ -328,56 +297,5 @@ class TRSPricer:
         lines.append(f"Simulation Details:")
         lines.append(f"  Number of Simulations: {summary_results.get('num_simulations', 0):,}")
         lines.append(f"  Payment Frequency: {payment_frequency} per year")
-        
-        # Hedging Recommendation section (if available)
-        if "hedging_recommendation" in summary_results:
-            hedging = summary_results["hedging_recommendation"]
-            lines.append("-" * 40)
-            lines.append("Hedging Recommendation (Desk's Perspective):")
-            lines.append(f"  Desk Role: Total Return {hedging['desk_position']}")
-            lines.append(f"  Primary Risk: {', '.join(hedging['primary_risks'])}")
-            lines.append("  Recommended Strategy:")
-
-            for idx, strategy in enumerate(hedging["recommended_strategy"], 1):
-                strategy_type = strategy.get("type", "UNKNOWN")
-                
-                if strategy_type == "IRS":
-                    fixed_rate_pct = strategy.get("fixed_rate", 0.0) * 100
-                    floating_index = strategy.get("floating_rate_index", "SOFR")
-                    notional = strategy.get("notional", 0.0)
-                    tenor = strategy.get("tenor", 0.0)
-                    receive_floating = strategy.get("receive_floating", True)
-                    direction = "Receive" if receive_floating else "Pay"
-                    lines.append(f"    {idx}. INTEREST RATE SWAP: {direction} {floating_index}, Pay Fixed @ {fixed_rate_pct:.2f}%")
-                    lines.append(f"       • Notional: ${notional:,.0f} | Tenor: {tenor} Years")
-                    lines.append(f"       • Objective: Hedge floating rate payment liability.")
-                
-                elif strategy_type == "OPTIONS":
-                    option_type = strategy.get("option_type", "PUT")
-                    strike_price = strategy.get("strike_price", 0.0)
-                    current_price = strategy.get("current_price", 1.0)
-                    num_contracts = strategy.get("num_contracts", 0)
-                    estimated_premium = strategy.get("estimated_premium", 0.0)
-                    strike_pct = (strike_price / current_price * 100) if current_price > 0 else 0.0
-                    option_direction = "Long" if option_type == "PUT" else "Short"
-                    lines.append(f"    {idx}. EQUITY PUT OPTIONS: {option_direction} Put, Strike @ ${strike_price:.2f} ({strike_pct:.0f}% of spot)")
-                    lines.append(f"       • Quantity: {num_contracts} Contracts | Estimated Premium: ${estimated_premium:,.0f}")
-                    lines.append(f"       • Objective: Protect against underlying depreciation below ${strike_price:.2f}.")
-                
-                elif strategy_type == "FUTURES":
-                    ticker = strategy.get("ticker", "UNKNOWN")
-                    num_contracts = strategy.get("num_contracts", 0)
-                    hedge_notional = strategy.get("hedge_notional", 0.0)
-                    lines.append(f"    {idx}. EQUITY FUTURES: Long Futures on {ticker}")
-                    lines.append(f"       • Quantity: {num_contracts} Contracts | Hedge Notional: ${hedge_notional:,.0f}")
-                    lines.append(f"       • Objective: Offset short equity exposure via long futures position.")
-                
-                else:
-                    lines.append(f"    {idx}. {strategy_type}: [Details not available]")
-
-            combined_cost = hedging.get("combined_hedge_cost", 0.0)
-            if combined_cost > 0:
-                lines.append(f"  Combined Hedge Cost (Premium): ~${combined_cost:,.0f}")
-            lines.append(f"  Net Effect: {hedging.get('net_effect', 'N/A')}")
         
         return "\n".join(lines)

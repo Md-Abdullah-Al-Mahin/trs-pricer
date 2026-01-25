@@ -161,11 +161,6 @@ with tab3:
 with tab4:
     st.pyplot(figures[3], use_container_width=True)
 
-# Hedge strategy plot if present
-if "hedging_recommendation" in summary_results and len(figures) > 4:
-    st.subheader("Hedge strategy")
-    st.pyplot(figures[4], use_container_width=True)
-
 st.divider()
 if st.button("Clear results and run again"):
     for k in ["summary_results", "figures", "params"]:

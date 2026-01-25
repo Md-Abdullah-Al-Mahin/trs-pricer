@@ -91,5 +91,16 @@ class OptionsHedge:
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for reporting."""
-        # TODO: Implement dictionary conversion
-        raise NotImplementedError
+        return {
+            "type": "OPTIONS",
+            "ticker": self.ticker,
+            "option_type": self.option_type,
+            "strike_price": self.strike_price,
+            "current_price": self.current_price,
+            "notional": self.notional,
+            "contract_size": self.contract_size,
+            "num_contracts": self.num_contracts,
+            "estimated_premium": self.estimated_premium,
+            "expiry_years": self.expiry_years,
+            "target_delta": self.target_delta,
+        }

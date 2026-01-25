@@ -45,5 +45,16 @@ class InterestRateSwapHedge:
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for reporting."""
-        # TODO: Implement dictionary conversion
-        raise NotImplementedError
+        return {
+            "type": "IRS",
+            "notional": self.notional,
+            "tenor": self.tenor,
+            "fixed_rate": self.fixed_rate,
+            "floating_rate_index": self.floating_rate_index,
+            "receive_floating": self.receive_floating,
+            "payment_frequency": self.payment_frequency,
+            "annual_payment": self.calculate_annual_payment(),
+            "periodic_payment": self.calculate_periodic_payment(),
+            "estimated_cost": 0.0,
+            "estimated_premium": 0.0,
+        }

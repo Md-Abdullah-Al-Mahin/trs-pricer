@@ -46,5 +46,14 @@ class FuturesHedge:
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for reporting."""
-        # TODO: Implement dictionary conversion
-        raise NotImplementedError
+        return {
+            "type": "FUTURES",
+            "ticker": self.ticker,
+            "notional": self.notional,
+            "current_price": self.current_price,
+            "contract_size": self.contract_size,
+            "target_hedge_ratio": self.target_hedge_ratio,
+            "num_contracts": self.num_contracts,
+            "hedge_notional": self.hedge_notional,
+            "estimated_cost": 0.0,  # Futures typically have minimal upfront cost (margin only)
+        }

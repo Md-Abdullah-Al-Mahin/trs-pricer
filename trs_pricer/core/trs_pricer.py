@@ -213,10 +213,17 @@ class TRSPricer:
         # Step 7: Generate hedging recommendations (if desk_position is provided)
         hedging_recommendation = None
         if "desk_position" in resolved_params:
-            # TODO: Implement hedging recommendation generation
-            # hedging_recommendation = self._hedge.generate_hedging_recommendation(...)
-            # summary_results["hedging_recommendation"] = hedging_recommendation
-            pass
+            try:
+                hedging_recommendation = self._hedge.generate_hedging_recommendation(
+                    desk_position=resolved_params["desk_position"],
+                    summary_results=summary_results,
+                    cash_flows_list=cash_flows_list,
+                    price_paths=price_paths,
+                    params=resolved_params,
+                )
+                summary_results["hedging_recommendation"] = hedging_recommendation
+            except Exception as e:
+                print(f"Warning: Could not generate hedging recommendations: {e}")
         
         # Step 8: Generate all plots
         figures = []
@@ -324,9 +331,53 @@ class TRSPricer:
         
         # Hedging Recommendation section (if available)
         if "hedging_recommendation" in summary_results:
-            # TODO: Implement hedging recommendation report formatting
+            hedging = summary_results["hedging_recommendation"]
             lines.append("-" * 40)
             lines.append("Hedging Recommendation (Desk's Perspective):")
-            lines.append("  [Hedging recommendation details to be implemented]")
+            lines.append(f"  Desk Role: Total Return {hedging['desk_position']}")
+            lines.append(f"  Primary Risk: {', '.join(hedging['primary_risks'])}")
+            lines.append("  Recommended Strategy:")
+
+            for idx, strategy in enumerate(hedging["recommended_strategy"], 1):
+                strategy_type = strategy.get("type", "UNKNOWN")
+                
+                if strategy_type == "IRS":
+                    fixed_rate_pct = strategy.get("fixed_rate", 0.0) * 100
+                    floating_index = strategy.get("floating_rate_index", "SOFR")
+                    notional = strategy.get("notional", 0.0)
+                    tenor = strategy.get("tenor", 0.0)
+                    receive_floating = strategy.get("receive_floating", True)
+                    direction = "Receive" if receive_floating else "Pay"
+                    lines.append(f"    {idx}. INTEREST RATE SWAP: {direction} {floating_index}, Pay Fixed @ {fixed_rate_pct:.2f}%")
+                    lines.append(f"       • Notional: ${notional:,.0f} | Tenor: {tenor} Years")
+                    lines.append(f"       • Objective: Hedge floating rate payment liability.")
+                
+                elif strategy_type == "OPTIONS":
+                    option_type = strategy.get("option_type", "PUT")
+                    strike_price = strategy.get("strike_price", 0.0)
+                    current_price = strategy.get("current_price", 1.0)
+                    num_contracts = strategy.get("num_contracts", 0)
+                    estimated_premium = strategy.get("estimated_premium", 0.0)
+                    strike_pct = (strike_price / current_price * 100) if current_price > 0 else 0.0
+                    option_direction = "Long" if option_type == "PUT" else "Short"
+                    lines.append(f"    {idx}. EQUITY PUT OPTIONS: {option_direction} Put, Strike @ ${strike_price:.2f} ({strike_pct:.0f}% of spot)")
+                    lines.append(f"       • Quantity: {num_contracts} Contracts | Estimated Premium: ${estimated_premium:,.0f}")
+                    lines.append(f"       • Objective: Protect against underlying depreciation below ${strike_price:.2f}.")
+                
+                elif strategy_type == "FUTURES":
+                    ticker = strategy.get("ticker", "UNKNOWN")
+                    num_contracts = strategy.get("num_contracts", 0)
+                    hedge_notional = strategy.get("hedge_notional", 0.0)
+                    lines.append(f"    {idx}. EQUITY FUTURES: Long Futures on {ticker}")
+                    lines.append(f"       • Quantity: {num_contracts} Contracts | Hedge Notional: ${hedge_notional:,.0f}")
+                    lines.append(f"       • Objective: Offset short equity exposure via long futures position.")
+                
+                else:
+                    lines.append(f"    {idx}. {strategy_type}: [Details not available]")
+
+            combined_cost = hedging.get("combined_hedge_cost", 0.0)
+            if combined_cost > 0:
+                lines.append(f"  Combined Hedge Cost (Premium): ~${combined_cost:,.0f}")
+            lines.append(f"  Net Effect: {hedging.get('net_effect', 'N/A')}")
         
         return "\n".join(lines)

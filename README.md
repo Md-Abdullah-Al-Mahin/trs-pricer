@@ -1,15 +1,15 @@
-# **Project Outline: Total Return Swap (TRS) Pricing Simulator**
+# Total Return Swap (TRS) Pricing Simulator
 
-## **1. Project Overview & Objective**
+## 1. Project Overview & Objective
 Build a Python-based simulation engine for a single-stock Total Return Swap (TRS), the foundational instrument in synthetic prime brokerage. This tool models the periodic cash flows between a prime brokerage desk and a hedge fund client, calculating the net economics and key risk metrics. The goal is a practical, educational model that demonstrates how synthetics provide leveraged exposure and how the desk manages funding and market risks.
 
 The codebase uses a **class-based architecture**: each domain (market data, simulation, cash flows, valuation, visualization, orchestration) is implemented as a dedicated class with clear interfaces.
 
 ---
 
-## **2. Core Technical Requirements & Specifications**
+## 2. Core Technical Requirements & Specifications
 
-### **2.1. Input Parameters (User-Defined Variables)**
+### 2.1. Input Parameters (User-Defined Variables)
 Configurable parameters:
 
 *   **Reference Asset**: `ticker` (e.g. `"AAPL"`)
@@ -28,7 +28,7 @@ Configurable parameters:
 *   **Market Assumptions**:
     *   `volatility`: **Auto-fetched** from yfinance (info, option-chain ATM IV, or historical log-return vol). Fallback: user input or config default.
 
-### **2.1.1. Market Data Sources & Fetching Logic (Current Implementation)**
+### 2.1.1. Market Data Sources & Fetching Logic (Current Implementation)
 
 All market data is provided by **yfinance**. There is no FRED or other external API in the current implementation.
 
@@ -45,7 +45,7 @@ Base spread is adjusted by (1) additive terms: beta and volatility vs baseline, 
 
 **Config** (`config.py`) defines `DEFAULT_BENCHMARK_RATE`, `DEFAULT_FUNDING_SPREAD`, `DEFAULT_VOLATILITY`, `DEFAULT_DIVIDEND_YIELD`, and related constants. FRED series IDs are present in config for possible future use but are not used by the current market data implementation.
 
-### **2.2. Mathematical & Financial Modeling Logic**
+### 2.2. Mathematical & Financial Modeling Logic
 
 **A. Simulate Future Stock Price Paths (GBM)**  
 *   `dt = 1 / payment_frequency` (time step per period).
@@ -69,7 +69,7 @@ Base spread is adjusted by (1) additive terms: beta and volatility vs baseline, 
 
 ---
 
-## **3. Class-Based Architecture**
+## 3. Class-Based Architecture
 
 The project is structured around the following classes:
 
@@ -80,13 +80,32 @@ The project is structured around the following classes:
 | `cash_flows` | `CashFlowEngine` | Total return leg, funding leg, net flows. `calculate_total_return_leg`, `calculate_funding_leg`, `calculate_cash_flows`. |
 | `valuation` | `ValuationEngine` | NPV, MTM, EPE, aggregation. `calculate_npv`, `calculate_marked_to_market_value`, `calculate_exposure_metrics`, `aggregate_results`. |
 | `visualization` | `TRSVisualizer` | Plots. `plot_simulated_price_paths`, `plot_npv_distribution`, `plot_epe_profile`, `plot_cash_flow_analysis`. |
-| `trs_pricer` | `TRSPricer` | Orchestrator. `get_user_inputs`, `run_simulation`, `generate_summary_report`. Uses the above classes (or injected equivalents). |
+| `trs_pricer` | `TRSPricer` | Orchestrator. `get_user_inputs`, `run_simulation`, `generate_summary_report`, `evaluate_decision`. Uses the above classes (or injected equivalents). |
+| `decision` | `TRSDecisionEngine` | Decision logic. `extract_key_metrics`, `evaluate_metric`, `evaluate_trade`, `calculate_adjustments`. VaR/EPE threshold scaling. |
+| `decision` | `TRSDecisionVisualizer` | Dashboard UI data. `get_status_info`, `get_metric_info`, `get_adjustments_info`. |
+| `decision` | `TRSDecisionReport` | One-page report. `generate_one_page_report` with trade details, metrics, thresholds, rationale. |
 
 ---
 
-## **4. Sample Usage & Expected Output**
+### 3.5. Decision Dashboard
 
-### **Class-based usage**
+Simulation outputs (distributions, EPE, cash flows) are rich but require interpretation. The Decision Dashboard is a **decision-support layer** that turns them into clear, actionable recommendations—a consistent “second opinion” without replacing trader judgment. It focuses on **radical simplicity**: three metrics, transparent thresholds, and simple adjustment formulas.
+
+It addresses three questions: (1) Is the trade sufficiently profitable? (2) Are potential losses acceptable? (3) Is credit exposure within appetite? These map to **NPV/notional** (profit), **95% VaR/notional** (tail risk, 5th percentile), and **peak EPE/notional** (credit risk).
+
+**Pipeline:**
+
+1. **Extract** — NPV/notional, VaR/notional, EPE/notional from `summary_results`.
+2. **Evaluate** — Compare vs. config thresholds (green/yellow/red). VaR and EPE thresholds scale with volatility and tenor (VaR ∝ σ√T, EPE ∝ σ·T^0.7); see `config.py` and `TRSDecisionEngine`.
+3. **Recommend** — Green: no changes. Yellow/red: list issues and suggest spread adjustments, notional reductions, or collateral. Adjustment formulas use basic financial math: spread changes scale inversely with tenor; notional reductions preserve proportionality; collateral targets partial mitigation.
+
+**Design:** Transparent thresholds in config, single-page UI with traffic light and metric cards. The one-page report includes **threshold calculation** (base values, scale factors, formulas, rationale). The dashboard prioritizes transparency, speed (assessment in minutes), and separation of concerns (it consumes simulator output only). See `trs_pricer/decision/` and the Streamlit Decision Dashboard section in §7.
+
+---
+
+## 4. Sample Usage & Expected Output
+
+### Class-based usage
 
 ```python
 from trs_pricer import TRSPricer
@@ -113,7 +132,7 @@ for fig in figs:
     plt.show()
 ```
 
-### **Manual overrides**
+### Manual overrides
 
 ```python
 params_manual = {
@@ -136,7 +155,7 @@ for fig in figs:
     plt.show()
 ```
 
-### **Expected console output (snippet)**
+### Expected console output (snippet)
 
 ```
 === TRS Pricing Simulation Results ===
@@ -175,9 +194,9 @@ Exact numbers depend on market data and simulation seed. Benchmark and spread re
 
 ---
 
-## **5. Implementation Order & Dependencies**
+## 5. Implementation Order & Dependencies
 
-### **Current Implementation Status**
+### Current Implementation Status
 
 ✅ **Completed:**
 - **`config.py`** - Constants, defaults, and FRED series IDs (for future use)
@@ -252,11 +271,19 @@ Exact numbers depend on market data and simulation seed. Benchmark and spread re
   - Error handling for robust execution
   - Uses class-based API: `TRSPricer` instance methods
 
+- **`trs_pricer/decision/`** - Decision Dashboard (fully implemented):
+  - **`decision_engine.py`** → `TRSDecisionEngine`: `extract_key_metrics`, `evaluate_metric`, `evaluate_trade`, `calculate_adjustments`; VaR/EPE scale factors (σ√T, σ·T^0.7)
+  - **`decision_visualizer.py`** → `TRSDecisionVisualizer`: status/metric/adjustments info for UI
+  - **`decision_report.py`** → `TRSDecisionReport`: `generate_one_page_report` with trade details, metrics, threshold calculation, issues, adjustments, rationale
+  - **`trs_pricer.evaluate_decision`**: consumes `summary_results`, returns status, metrics, issues, adjustments
+
+- **Streamlit UI** - Decision Dashboard integrated: traffic light, metric cards (NPV, VaR, EPE), adjustments panel, one-page report (view + download) with threshold calculation.
+
 ✅ **All implementation steps completed!**
 
 ---
 
-### **Dependencies flow**
+### Dependencies flow
 
 ```
 config.py ✅
@@ -275,20 +302,24 @@ TRSVisualizer (visualization) ✅
     ↓
 TRSPricer.run_simulation / generate_summary_report ✅
     ↓
-main.py ✅
+TRSDecisionEngine, TRSDecisionVisualizer, TRSDecisionReport (decision) ✅
+    ↓
+TRSPricer.evaluate_decision ✅  ← consumes summary_results
+    ↓
+main.py / streamlit_app.py ✅
 ```
 
 **Legend:** ✅ = Completed
 
 ---
 
-## **6. Installation & Setup**
+## 6. Installation & Setup
 
-### **Prerequisites**
+### Prerequisites
 - Python 3.8 or higher
 - pip (Python package manager)
 
-### **Installation Steps**
+### Installation Steps
 
 1. **Clone or download the project** to your local machine
 
@@ -330,7 +361,7 @@ main.py ✅
    python -c "import numpy, pandas, matplotlib, yfinance, streamlit; print('All dependencies installed successfully!')"
    ```
 
-### **Virtual Environment Notes**
+### Virtual Environment Notes
 
 - **Activating the venv**: Always activate the virtual environment before running the project:
   - macOS/Linux: `source venv/bin/activate`
@@ -345,9 +376,9 @@ main.py ✅
 
 ---
 
-## **7. Running the Project**
+## 7. Running the Project
 
-### **Option 1: Streamlit Web UI (Recommended)**
+### Option 1: Streamlit Web UI (Recommended)
 
 The easiest way to run the simulator is through the interactive Streamlit web interface:
 
@@ -362,18 +393,19 @@ The easiest way to run the simulator is through the interactive Streamlit web in
    - Enter parameters in the sidebar (ticker, notional, tenor, etc.)
    - Optionally enable manual overrides for market data
    - Click "Run Simulation"
-   - View summary report, key metrics, cash flows, NPV percentiles, and charts in the main area
+   - View **Decision Dashboard** (traffic light, NPV/VaR/EPE metric cards, adjustments if any), **one-page report** (with threshold calculation), simulation summary, cash flows, NPV percentiles, and charts
 
 The Streamlit UI provides:
 - ✅ Interactive parameter input with validation
 - ✅ Real-time simulation execution with progress indicators
-- ✅ Summary report (log) and key metrics dashboard
-- ✅ Total cash flows and NPV percentiles
+- ✅ **Decision Dashboard**: traffic light, NPV/VaR/EPE metrics vs thresholds, adjustment recommendations
+- ✅ **One-page decision report** (view + download) including **threshold calculation** (base, scaling, rationale)
+- ✅ Simulation summary, key metrics, total cash flows, NPV percentiles
 - ✅ Four visualization tabs: price paths, NPV distribution, EPE profile, cash flow analysis
 - ✅ Manual override options for market data
 - ✅ Clear results and run again
 
-### **Option 2: Command Line Interface**
+### Option 2: Command Line Interface
 
 Run the main script with default parameters:
 
@@ -387,7 +419,7 @@ This will:
 3. Generate a summary report in the console
 4. Display 4 visualization plots (price paths, NPV distribution, EPE profile, cash flow analysis)
 
-### **Customizing Parameters**
+### Customizing Parameters
 
 Edit `main.py` to customize the simulation parameters:
 
@@ -401,7 +433,7 @@ params = {
 }
 ```
 
-### **Using Manual Overrides**
+### Using Manual Overrides
 
 To use manual parameters instead of auto-fetched market data, modify `main.py` to call `main_manual()`:
 
@@ -435,7 +467,7 @@ for fig in figs:
     plt.show()
 ```
 
-### **Expected Runtime**
+### Expected Runtime
 
 - **Market data fetching**: 2-5 seconds (first run, cached on subsequent runs)
 - **Simulation (1000 paths)**: 1-3 seconds
@@ -445,7 +477,7 @@ for fig in figs:
 
 *Note: Runtime depends on network speed for market data and system performance for simulations.*
 
-### **Troubleshooting**
+### Troubleshooting
 
 **Issue: Market data fetch fails**
 - Check internet connection
@@ -466,13 +498,13 @@ for fig in figs:
 
 ---
 
-## **8. Financial Calculations Verification**
+## 8. Financial Calculations Verification
 
 **Status:** ✅ All calculations verified and correct
 
 This section documents the verification of all financial calculations in the TRS pricing simulator. All formulas have been reviewed and match standard TRS pricing conventions.
 
-### **8.1. GBM Simulation**
+### 8.1. GBM Simulation
 
 **Formula:**
 ```
@@ -485,7 +517,7 @@ mu = benchmark_rate (risk-neutral)
 
 ---
 
-### **8.2. Total Return Leg**
+### 8.2. Total Return Leg
 
 **Formula:**
 ```
@@ -497,7 +529,7 @@ Total Return = (period_end - period_start)/period_start * notional
 
 ---
 
-### **8.3. Funding Leg**
+### 8.3. Funding Leg
 
 **Formula:**
 ```
@@ -510,7 +542,7 @@ Funding Payment = (effective_funding_rate / payment_frequency) * notional
 
 ---
 
-### **8.4. Net Cash Flow**
+### 8.4. Net Cash Flow
 
 **Formula:**
 ```
@@ -521,7 +553,7 @@ net_cash_flow = funding_flow - total_return_flow
 
 ---
 
-### **8.5. NPV Calculation**
+### 8.5. NPV Calculation
 
 **Formula:**
 ```
@@ -534,7 +566,7 @@ NPV = Σ(cash_flow[t] * discount_factor[t])
 
 ---
 
-### **8.6. Marked-to-Market Value**
+### 8.6. Marked-to-Market Value
 
 **Formula:**
 ```
@@ -545,7 +577,7 @@ MTM at period p = PV of future cash flows from period p onward
 
 ---
 
-### **8.7. EPE Calculation**
+### 8.7. EPE Calculation
 
 **Formula:**
 ```
@@ -556,7 +588,7 @@ EPE[t] = E[max(0, MTM[t])] across all simulation paths
 
 ---
 
-### **8.8. Effective Funding Rate**
+### 8.8. Effective Funding Rate
 
 **Formula:**
 ```
@@ -567,7 +599,7 @@ effective_funding_rate = benchmark_rate + funding_spread
 
 ---
 
-### **8.9. Cash Flow Timing**
+### 8.9. Cash Flow Timing
 
 **Verification:** ✅ **CORRECT** - Cash flows are calculated for the correct periods:
 - Price paths: `(num_simulations, num_periods + 1)` - Includes initial price
@@ -577,7 +609,7 @@ effective_funding_rate = benchmark_rate + funding_spread
 
 ---
 
-### **Summary**
+### Summary
 
 | Component | Status | Notes |
 |-----------|--------|-------|

@@ -29,19 +29,9 @@ class CashFlowEngine:
         Returns:
             Cash flow amount (positive = desk pays client)
         """
-        # #region agent log
-        import json
-        with open('/Users/mdabdullahalmahin/Desktop/Projects/trs-pricer/.cursor/debug.log', 'a') as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"post-fix","hypothesisId":"A","location":"cash_flows.py:32","message":"Total return leg inputs","data":{"period_start_price":period_start_price,"period_end_price":period_end_price,"dividend_yield":dividend_yield,"notional":notional,"payment_frequency":payment_frequency},"timestamp":int(__import__('time').time()*1000)})+'\n')
-        # #endregion
         price_appreciation = (period_end_price - period_start_price) / period_start_price * notional
         dividend_payment = (dividend_yield / payment_frequency) * notional
-        result = price_appreciation + dividend_payment
-        # #region agent log
-        with open('/Users/mdabdullahalmahin/Desktop/Projects/trs-pricer/.cursor/debug.log', 'a') as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"post-fix","hypothesisId":"A","location":"cash_flows.py:36","message":"Total return leg result","data":{"price_appreciation":price_appreciation,"dividend_payment":dividend_payment,"total_return_leg":result},"timestamp":int(__import__('time').time()*1000)})+'\n')
-        # #endregion
-        return result
+        return price_appreciation + dividend_payment
 
     @staticmethod
     def calculate_funding_leg(
@@ -62,17 +52,7 @@ class CashFlowEngine:
         Returns:
             Funding cash flow (positive = client pays desk)
         """
-        # #region agent log
-        import json
-        with open('/Users/mdabdullahalmahin/Desktop/Projects/trs-pricer/.cursor/debug.log', 'a') as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"post-fix","hypothesisId":"B","location":"cash_flows.py:53","message":"Funding leg inputs","data":{"period_start_price":period_start_price,"period_end_price":period_end_price,"effective_funding_rate":effective_funding_rate,"notional":notional,"payment_frequency":payment_frequency},"timestamp":int(__import__('time').time()*1000)})+'\n')
-        # #endregion
-        funding_payment = (effective_funding_rate / payment_frequency) * notional
-        # #region agent log
-        with open('/Users/mdabdullahalmahin/Desktop/Projects/trs-pricer/.cursor/debug.log', 'a') as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"post-fix","hypothesisId":"B","location":"cash_flows.py:68","message":"Funding leg result (FIXED)","data":{"funding_payment":funding_payment,"net_funding_leg":funding_payment},"timestamp":int(__import__('time').time()*1000)})+'\n')
-        # #endregion
-        return funding_payment
+        return (effective_funding_rate / payment_frequency) * notional
 
     def calculate_cash_flows(
         self, price_paths: np.ndarray, params: Dict[str, Any]
@@ -127,15 +107,10 @@ class CashFlowEngine:
             ]
             
             # Net cash flow = funding received - total return paid
-            net_flows = []
-            for i in range(num_periods):
-                net_flow = funding_flows[i] - total_return_flows[i]
-                # #region agent log
-                import json
-                with open('/Users/mdabdullahalmahin/Desktop/Projects/trs-pricer/.cursor/debug.log', 'a') as f:
-                    f.write(json.dumps({"sessionId":"debug-session","runId":"post-fix","hypothesisId":"C","location":"cash_flows.py:112","message":"Net cash flow calculation","data":{"period":i+1,"funding_flow":funding_flows[i],"total_return_flow":total_return_flows[i],"net_cash_flow":net_flow},"timestamp":int(__import__('time').time()*1000)})+'\n')
-                # #endregion
-                net_flows.append(net_flow)
+            net_flows = [
+                funding_flows[i] - total_return_flows[i]
+                for i in range(num_periods)
+            ]
             
             # Create DataFrame for this simulation
             all_cash_flows.append(pd.DataFrame({

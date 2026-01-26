@@ -8,6 +8,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from trs_pricer import TRSPricer
+from trs_pricer.decision import TRSDecisionEngine, TRSDecisionVisualizer, TRSDecisionReport
 
 st.set_page_config(
     page_title="TRS Pricing Simulator",
@@ -16,14 +17,12 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Minimal CSS: ensure readable text (works with dark theme from config.toml)
+# Simple CSS styling
 st.markdown("""
 <style>
-    /* Light text on dark background */
-    .stMarkdown, .stMarkdown p, label, .stMetric label { color: #eaeaea !important; }
-    h1, h2, h3, .stCaption { color: #eaeaea !important; }
-    .main .block-container { background-color: #0e1117; }
-    [data-testid="stSidebar"] { background-color: #1a1d24; }
+    .main .block-container {
+        padding-top: 2rem;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -72,16 +71,15 @@ else:
         "num_simulations": int(num_simulations),
     }
     if use_manual:
-        if initial_price is not None:
-            params["initial_price"] = initial_price
-        if dividend_yield is not None:
-            params["dividend_yield"] = dividend_yield
-        if volatility is not None:
-            params["volatility"] = volatility
-        if benchmark_rate is not None:
-            params["benchmark_rate"] = benchmark_rate
-        if funding_spread is not None:
-            params["funding_spread"] = funding_spread
+        params.update({
+            k: v for k, v in {
+                "initial_price": initial_price,
+                "dividend_yield": dividend_yield,
+                "volatility": volatility,
+                "benchmark_rate": benchmark_rate,
+                "funding_spread": funding_spread,
+            }.items() if v is not None
+        })
 
     if st.button("Run simulation", type="primary"):
         with st.spinner("Running simulation…"):
@@ -107,12 +105,98 @@ if "summary_results" not in st.session_state or "figures" not in st.session_stat
 summary_results = st.session_state["summary_results"]
 figures = st.session_state["figures"]
 
-st.header("Results")
+# ----- Decision Dashboard -----
+st.header("Decision Dashboard")
+st.caption("Trade evaluation based on risk-adjusted profitability criteria")
+
+# Evaluate decision
+pricer = TRSPricer()
+decision_visualizer = TRSDecisionVisualizer()
+decision_report = TRSDecisionReport()
+
+decision_results = pricer.evaluate_decision(summary_results)
+overall_status = decision_results.get("overall_status", "unknown")
+metrics = decision_results.get("metrics", {})
+statuses = decision_results.get("statuses", {})
+issues = decision_results.get("issues", [])
+adjustments = decision_results.get("adjustments", {})
+
+# Store decision results in session state
+st.session_state["decision_results"] = decision_results
+
+# Status display
+status_info = decision_visualizer.get_status_info(overall_status)
+st.subheader("Trade Decision")
+status_col1, status_col2 = st.columns([1, 3])
+with status_col1:
+    st.markdown(f"**Status:**")
+    st.markdown(f"<span style='color: {status_info['color']}; font-size: 18px; font-weight: bold;'>{status_info['label']}</span>", unsafe_allow_html=True)
+with status_col2:
+    st.markdown(f"**Description:** {status_info['description']}")
+
+st.divider()
+
+# Key Metrics
+st.subheader("Key Metrics")
+# Pass adjusted thresholds from decision_results if available
+thresholds = decision_results.get("thresholds")
+metric_info = decision_visualizer.get_metric_info(metrics, statuses, thresholds)
+metric_col1, metric_col2, metric_col3 = st.columns(3)
+
+for col, metric in zip([metric_col1, metric_col2, metric_col3], metric_info):
+    with col:
+        threshold_text = f"Green: ≥{metric['green_threshold']:.2f}%" if metric['direction'] == 'higher' else f"Green: ≤{metric['green_threshold']:.2f}%"
+        st.metric(
+            label=metric['name'],
+            value=f"{metric['value']:.2f}{metric['unit']}",
+            delta=threshold_text,
+            delta_color="off"
+        )
+        st.caption(f"Status: <span style='color: {metric['status_color']};'>{metric['status'].upper()}</span>", unsafe_allow_html=True)
+
+st.divider()
+
+# Adjustments panel (only for non-Green decisions)
+if overall_status != "green":
+    st.subheader("Adjustment Recommendations")
+    adjustments_info = decision_visualizer.get_adjustments_info(adjustments, issues, summary_results)
+    
+    if adjustments_info["issues"]:
+        st.warning("Issues identified: " + ", ".join([issue.replace('_', ' ').title() for issue in adjustments_info["issues"]]))
+    
+    if adjustments_info["adjustments"]:
+        for adj in adjustments_info["adjustments"]:
+            with st.expander(adj["type"]):
+                st.write(f"**Current:** {adj['current']}")
+                st.write(f"**Change:** {adj['change']}")
+                st.write(f"**New:** {adj['new']}")
+    else:
+        st.info("No adjustments needed")
+    
+    st.divider()
+
+# Decision Report
+st.subheader("Decision Report")
+decision_report_text = decision_report.generate_one_page_report(decision_results, summary_results)
+
+with st.expander("View Full Report", expanded=False):
+    st.code(decision_report_text, language=None)
+
+st.download_button(
+    label="Download Decision Report",
+    data=decision_report_text,
+    file_name=f"trs_decision_report_{summary_results.get('ticker', 'UNKNOWN')}.txt",
+    mime="text/plain",
+)
+
+st.divider()
+
+# ----- Results (Existing Section) -----
+st.header("Simulation Results")
 
 # Summary report (readable monospace)
-pricer = TRSPricer()
 report = pricer.generate_summary_report(summary_results)
-st.subheader("Summary report")
+st.subheader("Simulation Summary Report")
 st.code(report, language=None)
 
 # Key metrics
@@ -163,7 +247,7 @@ with tab4:
 
 st.divider()
 if st.button("Clear results and run again"):
-    for k in ["summary_results", "figures", "params"]:
+    for k in ["summary_results", "figures", "params", "decision_results"]:
         if k in st.session_state:
             del st.session_state[k]
     st.rerun()

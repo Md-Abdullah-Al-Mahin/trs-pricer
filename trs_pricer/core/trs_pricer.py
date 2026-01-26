@@ -14,6 +14,7 @@ from trs_pricer.core.simulation import SimulationEngine
 from trs_pricer.core.cash_flows import CashFlowEngine
 from trs_pricer.core.valuation import ValuationEngine
 from trs_pricer.visualization.visualization import TRSVisualizer
+from trs_pricer.decision.decision_engine import TRSDecisionEngine
 
 
 class TRSPricer:
@@ -26,12 +27,14 @@ class TRSPricer:
         cash_flow_engine: Optional[CashFlowEngine] = None,
         valuation_engine: Optional[ValuationEngine] = None,
         visualizer: Optional[TRSVisualizer] = None,
+        decision_engine: Optional[TRSDecisionEngine] = None,
     ):
         self._market = market_data_fetcher or MarketDataFetcher(enable_cache=True)
         self._sim = simulation_engine or SimulationEngine()
         self._cf = cash_flow_engine or CashFlowEngine()
         self._val = valuation_engine or ValuationEngine()
         self._viz = visualizer or TRSVisualizer()
+        self._decision = decision_engine or TRSDecisionEngine()
 
     def _validate_positive(self, value: Any, name: str) -> float:
         """Validate and convert to positive float."""
@@ -155,26 +158,14 @@ class TRSPricer:
         cash_flows_list = self._cf.calculate_cash_flows(price_paths, resolved_params)
         
         # Step 4: Calculate NPV for each path
-        npv_list = []
-        # #region agent log
-        import json
-        with open('/Users/mdabdullahalmahin/Desktop/Projects/trs-pricer/.cursor/debug.log', 'a') as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"post-fix","hypothesisId":"E","location":"trs_pricer.py:166","message":"Starting NPV calculation for all paths","data":{"num_paths":len(cash_flows_list),"benchmark_rate":resolved_params["benchmark_rate"],"effective_funding_rate":resolved_params["effective_funding_rate"],"dividend_yield":resolved_params["dividend_yield"]},"timestamp":int(__import__('time').time()*1000)})+'\n')
-        # #endregion
-        for path_idx, cash_flows_df in enumerate(cash_flows_list):
-            npv = self._val.calculate_npv(
+        npv_list = [
+            self._val.calculate_npv(
                 cash_flows_df["net_cash_flow"],
                 resolved_params["benchmark_rate"],
                 resolved_params["payment_frequency"],
             )
-            npv_list.append(npv)
-            # #region agent log
-            if path_idx < 5:  # Log first 5 paths for analysis
-                with open('/Users/mdabdullahalmahin/Desktop/Projects/trs-pricer/.cursor/debug.log', 'a') as f:
-                    mean_net_flow = float(cash_flows_df["net_cash_flow"].mean())
-                    sum_net_flow = float(cash_flows_df["net_cash_flow"].sum())
-                    f.write(json.dumps({"sessionId":"debug-session","runId":"post-fix","hypothesisId":"E","location":"trs_pricer.py:175","message":"Path NPV result","data":{"path_idx":path_idx,"npv":npv,"mean_periodic_net_flow":mean_net_flow,"sum_undiscounted_flows":sum_net_flow},"timestamp":int(__import__('time').time()*1000)})+'\n')
-            # #endregion
+            for cash_flows_df in cash_flows_list
+        ]
         
         # Step 5: Calculate exposure metrics (EPE profile)
         epe_profile, epe_dates = self._val.calculate_exposure_metrics(cash_flows_list, resolved_params)
@@ -299,3 +290,40 @@ class TRSPricer:
         lines.append(f"  Payment Frequency: {payment_frequency} per year")
         
         return "\n".join(lines)
+
+    def evaluate_decision(self, summary_results: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Evaluate a trade using the decision dashboard engine.
+        
+        This method provides programmatic access to the decision dashboard functionality.
+        It consumes the summary_results from run_simulation() and returns decision
+        recommendations with status, metrics, issues, and adjustments.
+        
+        Args:
+            summary_results: Dictionary from TRSPricer.run_simulation() containing:
+                - npv_mean: Mean NPV
+                - npv_percentiles: Dictionary with percentiles (5th, 25th, 50th, 75th, 95th)
+                - peak_epe: Peak Expected Positive Exposure
+                - notional: Notional amount
+                - tenor: Tenor in years
+                - funding_spread: Current funding spread
+                - Other simulation metadata
+        
+        Returns:
+            Dictionary with decision results:
+                - overall_status: "green", "yellow", or "red"
+                - metrics: Dictionary with npv_pct, var_pct, epe_pct (as fractions of notional)
+                - statuses: Dictionary with individual metric statuses (npv, var, epe)
+                - issues: List of issue descriptions (if any)
+                - adjustments: Dictionary with adjustment suggestions (if any):
+                    - spread_adjustment: {"delta_bps": float, "new_spread": float}
+                    - notional_reduction: {"reduction_pct": float, "new_notional": float}
+                    - collateral_requirement: {"collateral_pct": float, "collateral_amount": float}
+        
+        Example:
+            >>> pricer = TRSPricer()
+            >>> summary_results, figures = pricer.run_simulation(params)
+            >>> decision_results = pricer.evaluate_decision(summary_results)
+            >>> print(f"Overall status: {decision_results['overall_status']}")
+        """
+        return self._decision.evaluate_trade(summary_results)

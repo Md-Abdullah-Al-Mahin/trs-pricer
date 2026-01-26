@@ -38,3 +38,25 @@ TRADING_DAYS_PER_YEAR = 252  # for annualization (e.g. sqrt(252) in vol)
 # Environment / API
 # -----------------------------------------------------------------------------
 FRED_API_KEY_ENV = "FRED_API_KEY"  # optional; also passable via params
+
+# -----------------------------------------------------------------------------
+# Decision Dashboard Thresholds
+# -----------------------------------------------------------------------------
+# Thresholds for TRS Decision Dashboard traffic light system
+# All thresholds are expressed as fractions of notional (e.g., 0.01 = 1% of notional)
+
+# NPV (Net Present Value) thresholds - profitability metric
+DECISION_NPV_GREEN_THRESHOLD = 0.01  # 1% of notional - Green: trade is sufficiently profitable
+DECISION_NPV_YELLOW_THRESHOLD = 0.005  # 0.5% of notional - Yellow: marginal profitability
+
+# VaR (Value at Risk) thresholds - tail risk metric (using 5th percentile)
+# Note: VaR is measured as absolute value of negative tail (5th percentile NPV).
+# Full-life TRS VaR (5th %ile NPV / notional) is often 35-55% for typical vol/tenor;
+# previous 15%/25% were too tight and caused VaR to never be green.
+DECISION_VAR_GREEN_THRESHOLD = 0.40  # 40% of notional - Green: acceptable tail risk
+DECISION_VAR_YELLOW_THRESHOLD = 0.55  # 55% of notional - Yellow: elevated tail risk
+
+# EPE (Expected Positive Exposure) thresholds - credit risk metric
+# Updated to more realistic levels for TRS trades (especially volatile stocks)
+DECISION_EPE_GREEN_THRESHOLD = 0.10  # 10% of notional - Green: acceptable credit exposure
+DECISION_EPE_YELLOW_THRESHOLD = 0.20  # 20% of notional - Yellow: elevated credit exposure
